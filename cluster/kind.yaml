@@ -1,0 +1,34 @@
+# One control-plane node. Multi-node kind buys realistic scheduling and costs
+# ~700 MiB per extra node; nothing this platform demonstrates depends on having
+# more than one, so the memory goes to the platform components instead.
+#
+# The two port mappings are the whole reason this file exists. In a cloud the
+# Gateway's Service is type LoadBalancer and the cloud controller hands it a
+# public address. kind has no cloud controller, so the edge is published as a
+# NodePort (platform/config/gateway/edge-service.yaml) and these mappings carry
+# it out to the host. That substitution is the ONLY place this repo differs from
+# what it would deploy on EKS or GKE.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: platform
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      # Marks the node so the edge Service can be pinned to it. With one node
+      # this is cosmetic; with more it is what keeps the NodePort mapping and
+      # the proxy on the same machine.
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "platform.internal/edge=true"
+    extraPortMappings:
+      # 8000/8443 rather than the reflexive 80/443 or 8080: unprivileged, and
+      # clear of the docker-compose stack in otel-service-reference, which this
+      # repo is meant to be able to run beside. Override in versions.env.
+      - containerPort: 30080   # edge HTTP  -> 301 to HTTPS
+        hostPort: 8000
+        protocol: TCP
+      - containerPort: 30443   # edge HTTPS -> Gateway API listener
+        hostPort: 8443
+        protocol: TCP

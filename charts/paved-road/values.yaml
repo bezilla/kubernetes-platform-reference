@@ -1,0 +1,122 @@
+# The paved road, in one file.
+#
+# This is the platform's interface. Everything an app team needs to say about a
+# service is here; everything they should not have to say about it is not. There
+# is no `securityContext:` block to fill in, no `HTTPRoute` to write, no
+# certificate to request, no OTLP endpoint to look up, and no resource numbers
+# to guess -- those are platform decisions, made once in the templates, and they
+# are the reason a compliant deploy takes eleven lines instead of two hundred.
+#
+# Four keys have no default and must be set: image.repository, image.tag,
+# owner.team and owner.contact. Everything else below is a working default.
+# values.schema.json enforces that, so `helm install` fails with a readable
+# message rather than the admission controller rejecting a half-rendered pod.
+
+# --- who owns this -----------------------------------------------------------
+# Becomes the three ownership labels every guardrail requires, on every object
+# the chart renders. This is the answer to "who do I page", and it is mandatory
+# for that reason.
+owner:
+  team: ""                    # required. e.g. payments
+  contact: ""                 # required. e.g. payments@example.com  (or a chat channel)
+  # Free-form; shown in the Argo CD UI and in `kubectl describe`.
+  description: ""
+
+# --- what to run -------------------------------------------------------------
+image:
+  repository: ""              # required
+  tag: ""                     # required. `latest` is rejected at admission
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+replicas: 2
+
+# The port the container serves HTTP on. One port, deliberately: a service that
+# needs to publish two protocols at the edge is not a paved-road service.
+port: 8080
+
+# Extra ports the container listens on that are NOT published through the
+# Service or the Gateway -- sidecar-free in-process dependencies, admin
+# listeners, debug endpoints.
+extraContainerPorts: []
+#  - name: pricing
+#    containerPort: 8081
+
+# --- how much it may use -----------------------------------------------------
+# A tier, not four numbers. Teams do not have to reason about millicores, and
+# the platform can retune every service on the cluster by editing one map in
+# _helpers.tpl. `custom` exists for the service that genuinely does not fit;
+# using it is a conversation with the platform team, not a default.
+#
+#   nano    10m /  32Mi  ->  limits  200m /  64Mi
+#   small   50m / 128Mi  ->  limits  500m / 256Mi
+#   medium 250m / 512Mi  ->  limits 1000m /  1Gi
+#   large  500m /  1Gi   ->  limits 2000m /  2Gi
+resources:
+  tier: small
+  custom: {}
+#  custom:
+#    requests: {cpu: 300m, memory: 700Mi}
+#    limits:   {cpu: 1200m, memory: 1400Mi}
+
+# --- when it is ready --------------------------------------------------------
+# A readiness probe is mandatory at admission, so the chart always renders one.
+# What is configurable is where it points, not whether it exists.
+health:
+  path: /healthz
+  # Liveness is optional and off by default: a bad liveness probe restarts a
+  # healthy pod under load and turns a slow service into an outage. Turn it on
+  # when you have a check that means "this process is wedged", not "this process
+  # is busy".
+  liveness:
+    enabled: false
+    path: /healthz
+  startupSeconds: 30          # grace before readiness failures count
+
+# --- how the internet reaches it ---------------------------------------------
+# `subdomain: quote-api` publishes https://quote-api.apps.platform.test.
+# The certificate, the listener, the redirect from plaintext and the proxy are
+# all platform-owned; this block is the entire app-side surface of the edge.
+ingress:
+  enabled: true
+  subdomain: ""               # defaults to the release name
+  # Paths routed to this service. The default sends everything.
+  paths:
+    - type: PathPrefix
+      value: /
+  # Requests are dropped after this. The platform picks a default so no team
+  # has to discover the proxy's own timeout the hard way.
+  timeout: 15s
+
+# --- what the platform tells it about itself ---------------------------------
+# Set on every container. A team that does nothing gets traces, metrics and logs
+# correlated by service, namespace, version and environment -- the wiring the
+# platform is for.
+observability:
+  enabled: true
+  # host:port. The platform collector; overriding this is a platform decision.
+  otlpEndpoint: otel-collector-opentelemetry-collector.platform-observability.svc.cluster.local:4317
+  serviceName: ""             # defaults to the release name
+  environment: local
+
+# --- everything else ---------------------------------------------------------
+# Plain environment variables specific to this service.
+env: {}
+#  API_ADDR: ":8080"
+
+# Values from Secrets and ConfigMaps the team already manages. The chart does
+# not create either: a chart that templates secret VALUES puts them in Git.
+envFrom: []
+#  - secretRef: {name: quote-api-credentials}
+
+# Mounted config. Same rule: referenced, never created here.
+volumes: []
+volumeMounts: []
+
+# The escape hatch, and the honest admission that no interface covers
+# everything. Merged into the rendered pod spec. Every use is a question for the
+# platform team: if two services need the same override, it belongs in the chart.
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []

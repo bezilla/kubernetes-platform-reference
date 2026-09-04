@@ -1,0 +1,21 @@
+# Argo CD will not resolve a chart from an OCI registry it has not been told
+# about. This is that registration, and nothing more: no credential, because
+# docker.io/envoyproxy is public.
+#
+# A private registry would need one, and it would not be committed here. The
+# repository is the cluster's desired state and therefore has to be safe to
+# read; credentials belong in External Secrets or Sealed Secrets, which put a
+# reference in Git and the value somewhere else.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-envoyproxy-oci
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  name: envoyproxy
+  type: helm
+  url: docker.io/envoyproxy
+  enableOCI: "true"

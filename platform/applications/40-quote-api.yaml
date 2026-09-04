@@ -1,0 +1,29 @@
+# Wave 3: a workload, deployed the way every workload on this platform is
+# deployed -- the authored chart, plus one values file the app team owns.
+#
+# Everything specific to this service is in apps/quote-api/values.yaml. Nothing
+# in this file is: it names a chart, a values file and a namespace, and it would
+# read identically for the tenth service as it does for the first. That is the
+# test of whether the abstraction holds.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: quote-api
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "3"}
+spec:
+  project: default
+  source:
+    repoURL: http://git-server.platform-system.svc/platform.git
+    targetRevision: main
+    path: charts/paved-road
+    helm:
+      releaseName: quote-api
+      valueFiles: [../../apps/quote-api/values.yaml]
+  destination: {server: https://kubernetes.default.svc, namespace: tenant-quotes}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [ServerSideApply=true]
+    retry:
+      limit: 8
+      backoff: {duration: 10s, factor: 2, maxDuration: 2m}

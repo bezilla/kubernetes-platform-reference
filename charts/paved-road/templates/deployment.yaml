@@ -1,0 +1,129 @@
+{{- /*
+The pod spec an app team does not write.
+
+Every field below that is not driven by a value is a platform decision made once
+here rather than four hundred times across a cluster: the security context that
+satisfies the restricted profile, the topology spread that keeps replicas off one
+node, the rolling-update surge that makes a deploy zero-downtime, and the
+readiness probe that makes zero-downtime true rather than aspirational.
+
+The four Kyverno guardrails all pass by construction. That is the point: policy
+is the backstop for hand-written manifests, and a team on the paved road never
+meets it.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "paved-road.fullname" . }}
+  labels: {{- include "paved-road.labels" . | nindent 4 }}
+  annotations:
+    platform.internal/description: {{ .Values.owner.description | default (printf "%s, owned by %s" (include "paved-road.fullname" .) .Values.owner.team) | quote }}
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Add one before removing one. With a readiness probe that means capacity
+      # never dips below `replicas` during a deploy.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels: {{- include "paved-road.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "paved-road.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "paved-road.fullname" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      {{- if gt (int .Values.replicas) 1 }}
+      topologySpreadConstraints:
+        # ScheduleAnyway, not DoNotSchedule: on a one-node cluster a hard
+        # constraint leaves every replica but the first Pending, and a paved
+        # road that only works on a big cluster is not a paved road.
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "paved-road.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: app
+          image: "{{ required "image.repository is required" .Values.image.repository }}:{{ required "image.tag is required -- and it may not be `latest`" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+            {{- with .Values.extraContainerPorts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- include "paved-road.observabilityEnv" . | nindent 12 }}
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Mandatory, not optional. See the readiness rule in
+          # platform/config/guardrails/require-probes-and-nonroot.yaml.
+          readinessProbe:
+            httpGet: {path: {{ .Values.health.path }}, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          startupProbe:
+            # Slow starts are a startup problem, not a liveness problem. This is
+            # what keeps a cold JVM or a migration from being restart-looped.
+            httpGet: {path: {{ .Values.health.path }}, port: http}
+            periodSeconds: 2
+            failureThreshold: {{ div (int .Values.health.startupSeconds) 2 }}
+          {{- if .Values.health.liveness.enabled }}
+          livenessProbe:
+            httpGet: {path: {{ .Values.health.liveness.path }}, port: http}
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- end }}
+          resources: {{- include "paved-road.resources" . | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            # Something almost always wants to write a temp file, and
+            # readOnlyRootFilesystem otherwise turns that into a crash loop the
+            # team has to debug. Giving every pod a writable /tmp costs nothing
+            # and removes the most common reason to ask for the escape hatch.
+            - {name: tmp, mountPath: /tmp}
+            {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

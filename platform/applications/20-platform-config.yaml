@@ -1,0 +1,28 @@
+# Wave 1: everything the platform declares for itself once its controllers are
+# running -- the tenant namespaces, the CA and ClusterIssuer, the GatewayClass,
+# the shared Gateway and its wildcard certificate, and the NodePort that carries
+# the edge out to the host.
+#
+# This is the layer that turns three installed controllers into a paved road. An
+# app team gets TLS, a hostname and an edge without writing any of it, because
+# it is declared here once.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-config
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "1"}
+spec:
+  project: default
+  source:
+    repoURL: http://git-server.platform-system.svc/platform.git
+    targetRevision: main
+    path: platform/config/edge
+    directory: {recurse: true}
+  destination: {server: https://kubernetes.default.svc, namespace: platform-edge}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+    retry:
+      limit: 8
+      backoff: {duration: 10s, factor: 2, maxDuration: 2m}

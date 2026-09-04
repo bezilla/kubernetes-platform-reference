@@ -1,0 +1,37 @@
+{{- /*
+The entire app-side surface of the edge.
+
+No Gateway, no listener, no certificate, no annotation naming an ingress
+controller. The Gateway is platform-owned and lives in platform-edge; this
+attaches to it by reference, and the Gateway's allowedRoutes selector decides
+whether the attachment is permitted -- which is why a namespace without
+`platform.internal/paved-road: "true"` cannot publish itself no matter what it
+writes here.
+
+Swapping Envoy Gateway for another implementation does not change this file.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "paved-road.fullname" . }}
+  labels: {{- include "paved-road.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: platform
+      namespace: platform-edge
+      sectionName: https
+  hostnames:
+    - {{ include "paved-road.host" . | quote }}
+  rules:
+    - matches:
+        {{- range .Values.ingress.paths }}
+        - path: {type: {{ .type }}, value: {{ .value | quote }}}
+        {{- end }}
+      timeouts:
+        request: {{ .Values.ingress.timeout | quote }}
+      backendRefs:
+        - name: {{ include "paved-road.fullname" . }}
+          port: 80
+          weight: 100
+{{- end }}

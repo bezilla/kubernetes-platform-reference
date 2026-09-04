@@ -1,0 +1,28 @@
+# Two kinds of namespace, and the label that tells them apart.
+#
+#   platform.internal/paved-road: "true"
+#
+# is the tenancy marker, and it does three jobs at once. The Kyverno guardrails
+# select on it, so policy applies to workloads and not to the platform's own
+# controllers. The shared Gateway's allowedRoutes select on it, so only a
+# paved-road namespace may attach an HTTPRoute to the edge. And it is what an
+# operator reads to know who owns a namespace.
+#
+# Onboarding a team is this label plus a values file. Nothing else.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-edge
+  labels:
+    app.kubernetes.io/part-of: platform
+    # Not a tenant namespace: the Gateway and its certificate live here and the
+    # platform team owns them.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-quotes
+  labels:
+    app.kubernetes.io/part-of: platform
+    platform.internal/paved-road: "true"
+    platform.internal/team: payments

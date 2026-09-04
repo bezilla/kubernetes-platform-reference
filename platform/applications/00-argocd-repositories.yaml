@@ -1,0 +1,21 @@
+# Wave -1: repository registrations Argo CD needs before it can fetch anything
+# else. Envoy Gateway publishes its chart only to an OCI registry, and Argo CD
+# requires an OCI Helm repository to be declared before an Application may name
+# it.
+#
+# This Secret holds no credential -- the registry is public. A private registry
+# would need one, and it would not live here: it would be pulled in by External
+# Secrets or Sealed Secrets, because a repository that is the cluster's desired
+# state is a repository that must be safe to read.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-repositories
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "-1"}
+spec:
+  project: default
+  source: {repoURL: http://git-server.platform-system.svc/platform.git, targetRevision: main, path: platform/config/argocd}
+  destination: {server: https://kubernetes.default.svc, namespace: argocd}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}

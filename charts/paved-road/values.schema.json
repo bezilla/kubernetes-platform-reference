@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "paved-road values",
+  "description": "Validated at `helm template` time so a bad values file fails with a readable message, rather than rendering a pod the admission controller then rejects for reasons that point at the chart instead of at the value.",
+  "type": "object",
+  "required": ["owner", "image"],
+  "additionalProperties": true,
+  "properties": {
+    "owner": {
+      "type": "object",
+      "required": ["team", "contact"],
+      "properties": {
+        "team":        {"type": "string", "minLength": 1, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+        "contact":     {"type": "string", "minLength": 3},
+        "description": {"type": "string"}
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "not": {"const": "latest"},
+          "description": "`latest` is rejected here and again at admission. Two rejections because this one is a better error message and that one cannot be bypassed."
+        },
+        "pullPolicy":  {"enum": ["IfNotPresent", "Always", "Never"]},
+        "pullSecrets": {"type": "array"}
+      }
+    },
+    "replicas": {"type": "integer", "minimum": 1, "maximum": 20},
+    "port":     {"type": "integer", "minimum": 1, "maximum": 65535},
+    "extraContainerPorts": {"type": "array"},
+    "resources": {
+      "type": "object",
+      "properties": {
+        "tier": {"enum": ["nano", "small", "medium", "large"]},
+        "custom": {
+          "type": "object",
+          "description": "Empty, or all four numbers. A partial override is how a workload ends up with a memory limit and no memory request.",
+          "oneOf": [
+            {"maxProperties": 0},
+            {
+              "required": ["requests", "limits"],
+              "properties": {
+                "requests": {"type": "object", "required": ["cpu", "memory"]},
+                "limits":   {"type": "object", "required": ["cpu", "memory"]}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "path":           {"type": "string", "pattern": "^/"},
+        "startupSeconds": {"type": "integer", "minimum": 2, "maximum": 600},
+        "liveness": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "path":    {"type": "string", "pattern": "^/"}
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled":   {"type": "boolean"},
+        "subdomain": {"type": "string", "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+        "timeout":   {"type": "string", "pattern": "^[0-9]+(ms|s|m)$"},
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["type", "value"],
+            "properties": {
+              "type":  {"enum": ["Exact", "PathPrefix"]},
+              "value": {"type": "string", "pattern": "^/"}
+            }
+          }
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "enabled":      {"type": "boolean"},
+        "otlpEndpoint": {"type": "string", "minLength": 1},
+        "serviceName":  {"type": "string"},
+        "environment":  {"type": "string", "minLength": 1}
+      }
+    },
+    "env":          {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
+    "envFrom":      {"type": "array"},
+    "volumes":      {"type": "array"},
+    "volumeMounts": {"type": "array"},
+    "podAnnotations": {"type": "object"},
+    "podLabels":      {"type": "object"},
+    "nodeSelector":   {"type": "object"},
+    "tolerations":    {"type": "array"}
+  }
+}

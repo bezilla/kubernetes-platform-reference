@@ -1,0 +1,15 @@
+apiVersion: v2
+name: paved-road
+description: >-
+  The platform's interface for app teams. A values file in, a running,
+  routable, observable, policy-compliant service out.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.31.0-0"
+keywords: [platform, paved-road, gateway-api]
+maintainers:
+  - name: Paul Bezilla
+    email: bezilla@protonmail.com
+annotations:
+  platform.internal/interface-version: "1"

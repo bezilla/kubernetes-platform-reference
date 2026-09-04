@@ -1,0 +1,49 @@
+# Why this exists
+#
+# At 03:00 the only question that matters about a pod is who to wake up. A
+# cluster where that is answered by asking around is a cluster with no ownership
+# model, and ownership is not something you can add later: it has to be on the
+# object when the object is created.
+#
+# Three labels, each answering a different question:
+#
+#   app.kubernetes.io/name    what is this          (the standard label, so
+#                                                    every off-the-shelf tool
+#                                                    already groups by it)
+#   platform.internal/team    who is paged
+#   platform.internal/owner   who to ask when the team name is stale
+#
+# `platform.internal/` rather than a bare `team:` key: a prefixed label cannot
+# collide with a chart, an operator or a cloud controller that also wanted the
+# word "team", and the prefix says out loud that this is a local convention
+# rather than an upstream one.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-ownership-labels
+  annotations:
+    policies.kyverno.io/title: Require ownership labels on workloads
+    policies.kyverno.io/category: Operations
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: workloads-must-name-an-owner
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {platform.internal/paved-road: "true"}
+      validate:
+        message: >-
+          Pods must carry app.kubernetes.io/name, platform.internal/team and
+          platform.internal/owner. The paved-road chart derives all three from
+          `owner` in values.yaml.
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+              platform.internal/team: "?*"
+              platform.internal/owner: "?*"

@@ -1,0 +1,21 @@
+{{ include "paved-road.fullname" . }} is on the paved road.
+
+  URL          https://{{ include "paved-road.host" . }}
+  Owner        {{ .Values.owner.team }} ({{ .Values.owner.contact }})
+  Image        {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  Replicas     {{ .Values.replicas }} at tier {{ .Values.resources.tier }}
+  Telemetry    {{ if .Values.observability.enabled }}OTLP -> {{ .Values.observability.otlpEndpoint }}{{ else }}off{{ end }}
+
+What the platform did that you did not write:
+
+  - terminated TLS with a cert-manager-issued certificate on the shared Gateway
+  - attached your HTTPRoute to it and redirected plaintext to HTTPS
+  - set the restricted security profile, resource requests and limits, a
+    readiness and startup probe, a rolling-update strategy that does not drop
+    traffic, and a PodDisruptionBudget
+  - wired OTLP, and labelled every object with your team and contact
+
+  From this machine:
+    curl --cacert .work/platform-ca.crt \
+      --resolve {{ include "paved-road.host" . }}:8443:127.0.0.1 \
+      https://{{ include "paved-road.host" . }}{{ .Values.health.path }}

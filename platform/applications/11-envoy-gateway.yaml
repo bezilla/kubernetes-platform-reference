@@ -1,0 +1,34 @@
+# Wave 0: the Gateway API implementation, and the Gateway API CRDs it brings.
+#
+# Envoy Gateway is the implementation, not the interface. The interface is
+# GatewayClass/Gateway/HTTPRoute, and nothing an app team writes names Envoy.
+# Replacing this with Istio, Cilium or Traefik changes this file and the
+# GatewayClass controllerName -- and no HTTPRoute in any tenant namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: envoy-gateway
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "0"}
+spec:
+  project: default
+  source:
+    repoURL: docker.io/envoyproxy       # registered by the argocd-repositories app
+    chart: gateway-helm
+    targetRevision: v1.9.1
+    helm:
+      releaseName: envoy-gateway
+      values: |
+        # The chart also installs the Gateway API CRDs. Nothing else in this
+        # platform installs them, so this stays true.
+        crds:
+          enabled: true
+        deployment:
+          envoyGateway:
+            resources:
+              requests: {cpu: 50m, memory: 128Mi}
+              limits:   {memory: 512Mi}
+  destination: {server: https://kubernetes.default.svc, namespace: envoy-gateway-system}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

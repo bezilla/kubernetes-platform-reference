@@ -1,0 +1,38 @@
+# The app of apps.
+#
+# This is the last thing `make up` applies imperatively and the only Application
+# that is not itself managed by Argo CD. Everything else in the platform is a
+# child of this: `platform/applications/` holds one Application per component,
+# and this one syncs that directory. Adding a platform component means adding a
+# file there and committing -- never `helm install`.
+#
+# repoURL points at the in-cluster Git server that `make publish` writes to.
+# Pointing this platform at a real Git provider is a one-line change here and in
+# the six children under platform/applications/, which is the entire cost of the
+# local stand-in. See DESIGN.md, "The Git server is a stand-in".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+  finalizers:
+    # Without this, deleting the root Application orphans every child and their
+    # resources, and the cluster keeps running a platform nothing declares.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: http://git-server.platform-system.svc/platform.git
+    targetRevision: main
+    path: platform/applications
+    directory: {recurse: false}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true      # a deleted file is a deleted component, not a leftover
+      selfHeal: true   # `kubectl edit` on a managed resource is reverted
+    retry:
+      limit: 5
+      backoff: {duration: 10s, factor: 2, maxDuration: 3m}

@@ -1,0 +1,48 @@
+# quote-api, on the paved road.
+#
+# This is the whole of what the payments team writes to run a service on this
+# platform. There is no Deployment here, no Service, no HTTPRoute, no
+# certificate, no security context, no resource arithmetic, and no OTLP
+# endpoint. Twenty-odd lines, and every one of them is a fact about this service
+# that only this team knows.
+#
+# The service itself is the workload from otel-service-reference -- already
+# instrumented, already emitting OTLP. `make sample-image` builds it from
+# ../otel-service-reference and loads it into the kind node.
+
+owner:
+  team: payments
+  contact: payments@example.com
+  description: Quote pricing API. Instrumented with OpenTelemetry end to end.
+
+image:
+  repository: platform.local/quote-api
+  tag: "0.1.0"
+  # The image is side-loaded into the kind node rather than pulled from a
+  # registry, so there is nothing to pull and asking would fail.
+  pullPolicy: Never
+
+replicas: 2
+
+port: 8080
+extraContainerPorts:
+  # The pricing dependency the service calls over localhost, so its traces have
+  # a second span to link. Deliberately not in the Service or the HTTPRoute:
+  # it is an internal listener, not part of the service's public surface.
+  - name: pricing
+    containerPort: 8081
+
+resources:
+  tier: nano          # a Go service that serves a JSON quote. It does not need more.
+
+health:
+  path: /healthz
+
+ingress:
+  enabled: true
+  subdomain: quote-api          # -> https://quote-api.apps.platform.test
+
+env:
+  API_ADDR: ":8080"
+  PRICING_ADDR: ":8081"
+  PRICING_URL: "http://localhost:8081"

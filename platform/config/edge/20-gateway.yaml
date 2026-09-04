@@ -1,0 +1,118 @@
+# The shared edge: one GatewayClass, one Gateway, one wildcard certificate.
+#
+# App teams write HTTPRoutes and nothing else. They do not create Gateways --
+# a Gateway per team means a load balancer per team, a certificate per team and
+# a set of listener conflicts nobody wants to arbitrate. One Gateway with a
+# wildcard listener means an app team's entire edge configuration is a hostname.
+#
+# What this costs: every paved-road service shares one certificate and one
+# Envoy fleet, so a service that needs its own certificate, its own IP or its own
+# proxy tuning is off the paved road by definition. DESIGN.md records where that
+# line sits.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: platform
+  annotations: {argocd.argoproj.io/sync-wave: "0"}
+spec:
+  # The one place the implementation is named. Swapping Envoy Gateway for Istio
+  # or Cilium changes this string and the Application that installs it.
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  description: The paved-road edge. One Gateway, wildcard TLS, tenant HTTPRoutes.
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: platform-proxy
+    namespace: platform-edge
+---
+# Implementation-specific proxy shape. This is the seam where a Gateway API
+# platform still has to say something about the data plane -- replicas,
+# resources, how the Service is published. Everything above and below it is
+# portable; this object is not, and it is deliberately the only one that is not.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: platform-proxy
+  namespace: platform-edge
+  annotations: {argocd.argoproj.io/sync-wave: "0"}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 1
+        container:
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits:   {memory: 320Mi}
+      envoyService:
+        # ClusterIP, not LoadBalancer: kind has no cloud controller, so a
+        # LoadBalancer Service would sit Pending forever and the Gateway would
+        # never report an address. 30-edge-service.yaml publishes the same pods
+        # on a fixed NodePort instead. On EKS or GKE you delete that file and
+        # set this to LoadBalancer.
+        type: ClusterIP
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-wildcard
+  namespace: platform-edge
+  annotations: {argocd.argoproj.io/sync-wave: "1"}
+spec:
+  secretName: platform-wildcard-tls
+  commonName: "*.apps.platform.test"
+  dnsNames:
+    - "*.apps.platform.test"
+    - "apps.platform.test"
+  duration: 2160h
+  renewBefore: 360h
+  privateKey: {algorithm: ECDSA, size: 256}
+  issuerRef: {name: platform-ca, kind: ClusterIssuer, group: cert-manager.io}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: platform
+  namespace: platform-edge
+  annotations: {argocd.argoproj.io/sync-wave: "2"}
+spec:
+  gatewayClassName: platform
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        # The redirect route below lives in this namespace, and only it needs
+        # the plaintext listener. Tenants attach to https.
+        namespaces: {from: Same}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.apps.platform.test"
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: platform-wildcard-tls}]
+      allowedRoutes:
+        kinds: [{kind: HTTPRoute}]
+        # The tenancy marker again. A namespace without it cannot put itself on
+        # the internet through this Gateway, whatever it writes in an HTTPRoute.
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: {platform.internal/paved-road: "true"}
+---
+# Plaintext is answered, never served. Platform-owned, so no app team has to
+# remember it and no app team can forget it.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https
+  namespace: platform-edge
+  annotations: {argocd.argoproj.io/sync-wave: "3"}
+spec:
+  parentRefs: [{name: platform, sectionName: http}]
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect: {scheme: https, statusCode: 301}

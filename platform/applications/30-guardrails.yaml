@@ -1,0 +1,22 @@
+# Wave 2: the Kyverno policies, after the admission controller that serves them.
+#
+# Separated from the Kyverno install on purpose. The controller is a vendored
+# upstream chart on a version pin; the policies are this platform's own rules and
+# change on their own schedule. Merging them would mean a policy edit re-renders
+# the controller's manifests.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guardrails
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "2"}
+spec:
+  project: default
+  source:
+    repoURL: http://git-server.platform-system.svc/platform.git
+    targetRevision: main
+    path: platform/config/guardrails
+  destination: {server: https://kubernetes.default.svc, namespace: kyverno}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [ServerSideApply=true]

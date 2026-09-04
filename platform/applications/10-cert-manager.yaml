@@ -1,0 +1,37 @@
+# Wave 0: cert-manager, ahead of anything that asks for a certificate.
+#
+# The platform issues its own certificates from a CA it creates at install time,
+# so app teams never see an issuer, a CSR, or a renewal. On a real cluster this
+# ClusterIssuer would be ACME against Let's Encrypt or a private PKI; the
+# certificate consumers -- the Gateway listener, and any workload that asks --
+# do not change when it does.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "0"}
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.21.1
+    helm:
+      releaseName: cert-manager
+      values: |
+        crds:
+          enabled: true
+          keep: false          # this is a demonstration cluster; `make down` should leave nothing
+        resources:
+          requests: {cpu: 10m, memory: 48Mi}
+        webhook:
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+        cainjector:
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+  destination: {server: https://kubernetes.default.svc, namespace: cert-manager}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

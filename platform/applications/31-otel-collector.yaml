@@ -1,0 +1,60 @@
+# Wave 2: the OTLP endpoint the paved-road chart wires every workload to.
+#
+# The chart sets OTEL_EXPORTER_OTLP_ENDPOINT on every container it renders, so
+# "observability wiring" is not something an app team configures -- it is
+# something they receive. What sits behind this collector is a platform choice:
+# here it writes to the pod log so `kubectl logs` shows spans arriving, and in a
+# real cluster its exporters point at Tempo, Prometheus and Loki. Neither the
+# chart nor any workload changes when that happens.
+#
+# See the observability module in terragrunt-reference-architecture for the
+# cloud-side version of this same seam.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "2"}
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.172.0
+    helm:
+      releaseName: otel-collector
+      values: |
+        mode: deployment
+        replicaCount: 1
+        image:
+          repository: otel/opentelemetry-collector-contrib
+        command:
+          name: otelcol-contrib
+        presets:
+          kubernetesAttributes:
+            enabled: true      # every span gets its namespace, pod and node
+        resources:
+          requests: {cpu: 25m, memory: 96Mi}
+          limits:   {memory: 256Mi}
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc: {endpoint: 0.0.0.0:4317}
+                http: {endpoint: 0.0.0.0:4318}
+          processors:
+            batch: {}
+          exporters:
+            # The one exporter that needs no backend. Swap this block for
+            # otlp/tempo, prometheusremotewrite and otlphttp/loki and nothing
+            # upstream of it notices.
+            debug: {verbosity: basic}
+          service:
+            pipelines:
+              traces:  {receivers: [otlp], processors: [batch], exporters: [debug]}
+              metrics: {receivers: [otlp], processors: [batch], exporters: [debug]}
+              logs:    {receivers: [otlp], processors: [batch], exporters: [debug]}
+  destination: {server: https://kubernetes.default.svc, namespace: platform-observability}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

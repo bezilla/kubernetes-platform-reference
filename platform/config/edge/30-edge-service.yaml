@@ -1,0 +1,40 @@
+# How the edge reaches the host, and the one object in this repo that exists
+# only because the cluster is kind.
+#
+# In a cloud, the Gateway's Service is type LoadBalancer, the cloud controller
+# assigns an address, and DNS points at it. kind has no cloud controller. So the
+# proxy pods -- which Envoy Gateway creates in its own infrastructure namespace,
+# not in platform-edge -- are published a second time on fixed NodePorts, and
+# cluster/kind.yaml maps those to localhost:8000 and localhost:8443.
+#
+# Selecting the proxy pods by their owning-gateway labels rather than by
+# deployment name matters: Envoy Gateway names the proxy deployment with a hash
+# suffix that changes when the Gateway spec changes, and a Service selecting on
+# that name would silently stop matching after any edit to the Gateway.
+#
+# Envoy Gateway remaps privileged listener ports into the unprivileged range by
+# adding 10000, so the listener on 443 is served on container port 10443. That
+# is an implementation detail of Envoy Gateway, which is why it appears in the
+# same file as the other implementation detail and nowhere else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-edge
+  namespace: envoy-gateway-system
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/managed-by: envoy-gateway
+    gateway.envoyproxy.io/owning-gateway-namespace: platform-edge
+    gateway.envoyproxy.io/owning-gateway-name: platform
+  ports:
+    - name: http
+      port: 80
+      targetPort: 10080
+      nodePort: 30080
+    - name: https
+      port: 443
+      targetPort: 10443
+      nodePort: 30443

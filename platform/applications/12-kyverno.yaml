@@ -1,0 +1,41 @@
+# Wave 0: the admission controller, ahead of the policies it enforces and ahead
+# of any workload those policies must catch.
+#
+# Only the controllers this platform uses run. The cleanup controller manages
+# TTL-based deletion, which nothing here declares; leaving it out is one fewer
+# pod on a single-node cluster and one fewer thing whose failure would look like
+# a policy failure.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "0"}
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.9.0
+    helm:
+      releaseName: kyverno
+      values: |
+        admissionController:
+          replicas: 1
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits:   {memory: 384Mi}
+        backgroundController:
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits:   {memory: 192Mi}
+        reportsController:
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits:   {memory: 192Mi}
+        cleanupController:
+          enabled: false
+  destination: {server: https://kubernetes.default.svc, namespace: kyverno}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

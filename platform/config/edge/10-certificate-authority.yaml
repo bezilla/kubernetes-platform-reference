@@ -1,0 +1,43 @@
+# The platform's certificate authority, in three objects.
+#
+#   selfsigned  ->  a CA certificate  ->  a ClusterIssuer that signs from it
+#
+# App teams never see any of this. They set a hostname; TLS arrives. Replacing
+# it with ACME against Let's Encrypt, or with an intermediate from a corporate
+# PKI, is a change to this file alone -- the Gateway references the
+# ClusterIssuer by name and does not care what stands behind it.
+#
+# Sync waves order the chain: an Issuer that does not exist cannot sign, and a
+# ClusterIssuer whose CA secret is not yet populated reports NotReady and takes
+# the Gateway down with it.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: platform-selfsigned
+  annotations: {argocd.argoproj.io/sync-wave: "0"}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-root-ca
+  namespace: cert-manager       # where the ClusterIssuer below looks for its key
+  annotations: {argocd.argoproj.io/sync-wave: "1"}
+spec:
+  isCA: true
+  commonName: platform.test Local Root CA
+  secretName: platform-root-ca
+  duration: 8760h               # one year; this CA outlives any cluster built from it
+  renewBefore: 720h
+  privateKey: {algorithm: ECDSA, size: 256}
+  issuerRef: {name: platform-selfsigned, kind: ClusterIssuer, group: cert-manager.io}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: platform-ca
+  annotations: {argocd.argoproj.io/sync-wave: "2"}
+spec:
+  ca:
+    secretName: platform-root-ca

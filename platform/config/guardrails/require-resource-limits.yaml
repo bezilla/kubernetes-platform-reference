@@ -1,0 +1,48 @@
+# Why this exists
+#
+# A container with no memory limit is a container that can take a node down, and
+# a container with no requests is a container the scheduler cannot place
+# honestly -- it will fit anywhere, right up until it does not. On a shared
+# cluster the cost of one unbounded pod is paid by every other pod on its node.
+#
+# The paved-road chart sets all four values from `resources.tier`, so a team
+# using the chart never sees this rule. It fires on hand-written manifests,
+# which is exactly where it is needed.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require CPU and memory requests and limits
+    policies.kyverno.io/category: Reliability
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: containers-must-declare-resources
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {platform.internal/paved-road: "true"}
+      validate:
+        message: >-
+          Every container must set resources.requests.cpu, resources.requests.memory
+          and resources.limits.memory. The paved-road chart sets these from
+          `resources.tier`; see charts/paved-road/README.md.
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.requests.cpu    || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.requests.memory || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.limits.memory   || '' }}"
+                    operator: Equals
+                    value: ""

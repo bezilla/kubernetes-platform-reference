@@ -1,0 +1,16 @@
+{{- /*
+Only when there is more than one replica. A PDB with minAvailable on a
+single-replica Deployment blocks every node drain in the cluster -- the
+classic way a well-meant availability control becomes an operational one.
+*/ -}}
+{{- if gt (int .Values.replicas) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "paved-road.fullname" . }}
+  labels: {{- include "paved-road.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {{- include "paved-road.selectorLabels" . | nindent 6 }}
+{{- end }}

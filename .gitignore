@@ -1,0 +1,5 @@
+# Everything `make up` generates. Nothing here is a source of truth.
+/.work/
+
+# Local kubeconfig exports
+/kubeconfig

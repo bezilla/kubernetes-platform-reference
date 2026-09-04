@@ -1,0 +1,59 @@
+# Argo CD is the one component Helm installs imperatively. Everything else is an
+# Argo CD Application, because everything else CAN be: the reconciler cannot
+# reconcile itself into existence.
+#
+# Keep this file small. Anything configurable that is not needed to bootstrap
+# belongs in the cluster as a synced manifest, not here, or it becomes a second
+# source of truth that only `make up` ever reads.
+
+global:
+  # One control-plane node with ~4 GiB to share. These are floors, not
+  # recommendations: on a real cluster you would size from observed usage.
+  domain: argocd.platform.test
+
+configs:
+  params:
+    # TLS between the browser and the API server is terminated by `kubectl
+    # port-forward` in this setup, so serving plaintext inside the cluster
+    # avoids a redirect loop. On a real cluster the Gateway terminates TLS and
+    # this stays false.
+    server.insecure: true
+    # The repo server clones over plain HTTP from the in-cluster Git server.
+    # Nothing outside the cluster is reachable from it.
+    reposerver.parallelism.limit: "2"
+  cm:
+    # Argo's own health assessment does not know what a Kyverno ClusterPolicy or
+    # a Gateway is. Without these the app-of-apps tree sits "Progressing"
+    # forever and the one screenshot that proves the platform is healthy never
+    # goes green.
+    resource.customizations.health.kyverno.io_ClusterPolicy: |
+      hs = {}
+      if obj.status ~= nil and obj.status.conditions ~= nil then
+        for _, c in ipairs(obj.status.conditions) do
+          if c.type == "Ready" and c.status == "True" then
+            hs.status = "Healthy"; hs.message = c.message or "policy ready"; return hs
+          end
+        end
+      end
+      hs.status = "Progressing"; hs.message = "waiting for the policy to be admitted"
+      return hs
+
+dex:
+  enabled: false          # no SSO to configure for a local reference platform
+notifications:
+  enabled: false          # nothing to notify
+applicationSet:
+  enabled: false          # the app-of-apps root is a plain Application
+
+redis:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+controller:
+  resources:
+    requests: {cpu: 100m, memory: 192Mi}
+repoServer:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+server:
+  resources:
+    requests: {cpu: 25m, memory: 96Mi}

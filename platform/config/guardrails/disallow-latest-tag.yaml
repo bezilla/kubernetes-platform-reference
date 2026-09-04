@@ -1,0 +1,61 @@
+# Why this exists
+#
+# `:latest` makes a Deployment's manifest and the thing it actually runs two
+# different facts. Two replicas created a week apart run different code; a
+# rollback rolls back to whatever `:latest` points at now, which is the version
+# you are rolling back from. It also breaks the premise of GitOps: if the image
+# reference does not change, Argo CD sees no drift and has nothing to
+# reconcile, so the cluster can be wrong while every Application reads Synced.
+#
+# An untagged reference is the same defect spelled differently, so both are
+# rejected.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow :latest and untagged images
+    policies.kyverno.io/category: Supply chain
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: image-tag-must-be-explicit
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {platform.internal/paved-road: "true"}
+      validate:
+        message: >-
+          Images must carry an explicit tag that is not `latest`. A floating tag
+          means the manifest and the running code are two different facts, and
+          Argo CD cannot see the difference.
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest | !*:latest@* "
+    - name: image-tag-must-be-present
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {platform.internal/paved-road: "true"}
+      validate:
+        message: >-
+          Images must carry an explicit tag. An untagged reference resolves to
+          `latest` and has the same defect.
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                all:
+                  # Anything after the last `/` that contains no `:` is untagged.
+                  # Splitting on `/` first keeps a registry port (`host:5000/x`)
+                  # from reading as a tag.
+                  - key: "{{ regex_match('^[^:]+$', split(element.image, '/') | [-1]) }}"
+                    operator: Equals
+                    value: true

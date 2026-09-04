@@ -1,0 +1,67 @@
+# Why this exists
+#
+# Two rules, one file, because they answer the same question: can the platform
+# make a promise about this pod without asking the team that wrote it?
+#
+# A readiness probe is what lets the platform route traffic. Without one,
+# Kubernetes marks a pod Ready the moment its process starts, so the Gateway
+# sends requests to a container that is still opening database connections, and
+# every rolling update drops traffic on the floor. The platform promises
+# zero-downtime deploys; that promise is only keepable if it can tell when a
+# pod is actually able to serve.
+#
+# runAsNonRoot is the smallest container-security control with a real blast
+# radius: a root process that escapes its container is root on the node. This
+# is one rule from the restricted Pod Security Standard rather than the whole
+# profile -- the full profile also demands seccomp, capability drops and a
+# read-only root filesystem, all of which the paved-road chart sets, and none
+# of which is worth rejecting a deploy over on a local reference cluster. The
+# note in DESIGN.md records where the line would move on a real one.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes-and-nonroot
+  annotations:
+    policies.kyverno.io/title: Require a readiness probe and a non-root user
+    policies.kyverno.io/category: Reliability, Security
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: containers-must-declare-readiness
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {platform.internal/paved-road: "true"}
+      validate:
+        message: >-
+          Every container must declare a readinessProbe. Without one the Gateway
+          routes to pods that are not yet serving, and a rolling update drops
+          requests.
+        pattern:
+          spec:
+            containers:
+              - readinessProbe:
+                  "?*": "?*"
+    - name: containers-must-not-run-as-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {platform.internal/paved-road: "true"}
+      validate:
+        message: >-
+          runAsNonRoot must be true, on the pod or on every container. A root
+          process that escapes its container is root on the node.
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: true
