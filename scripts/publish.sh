@@ -42,9 +42,15 @@ echo "publish: ${BRANCH} @ ${sha} -> http://git-server.${NS}.svc/git/platform.gi
 
 # Argo polls every three minutes by default. Nudge it so the demonstration does
 # not consist of waiting.
+# Best-effort, deliberately: the repository is already published by this point,
+# and Argo will pick it up on its own poll regardless. Under load the API server
+# can time out on this annotation, and a failed nudge must not fail a publish
+# that succeeded -- or every caller has to decide what a half-failure means.
 if kubectl get application -n argocd platform-root >/dev/null 2>&1; then
-	kubectl -n argocd patch application platform-root --type merge \
-		-p '{"metadata":{"annotations":{"platform.internal/published":"'"$sha"'"}}}' >/dev/null
-	kubectl -n argocd annotate applications --all argocd.argoproj.io/refresh=hard --overwrite >/dev/null
-	echo "publish: refresh requested on all Applications"
+	if kubectl -n argocd annotate applications --all \
+		argocd.argoproj.io/refresh=hard --overwrite --request-timeout=20s >/dev/null 2>&1; then
+		echo "publish: refresh requested on all Applications"
+	else
+		echo "publish: could not nudge Argo (API busy); it will poll within ${ARGOCD_POLL_HINT:-3m}"
+	fi
 fi
