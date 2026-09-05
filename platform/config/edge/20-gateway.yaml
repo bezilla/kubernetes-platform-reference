@@ -61,7 +61,13 @@ kind: Certificate
 metadata:
   name: platform-wildcard
   namespace: platform-edge
-  annotations: {argocd.argoproj.io/sync-wave: "1"}
+  # Wave 3, after the platform-ca ClusterIssuer at wave 2 in
+  # 10-certificate-authority.yaml. At wave 1 this deadlocked: Argo waits for a
+  # wave to go healthy before starting the next, and this certificate cannot go
+  # healthy until the issuer it names exists -- which was a later wave. The sync
+  # sat on "waiting for healthy state of Certificate/platform-wildcard" forever.
+  # Waves are a total order across the whole Application, not per file.
+  annotations: {argocd.argoproj.io/sync-wave: "3"}
 spec:
   secretName: platform-wildcard-tls
   commonName: "*.apps.platform.test"
@@ -78,7 +84,7 @@ kind: Gateway
 metadata:
   name: platform
   namespace: platform-edge
-  annotations: {argocd.argoproj.io/sync-wave: "2"}
+  annotations: {argocd.argoproj.io/sync-wave: "4"}
 spec:
   gatewayClassName: platform
   listeners:
@@ -112,7 +118,7 @@ kind: HTTPRoute
 metadata:
   name: http-to-https
   namespace: platform-edge
-  annotations: {argocd.argoproj.io/sync-wave: "3"}
+  annotations: {argocd.argoproj.io/sync-wave: "5"}
 spec:
   parentRefs: [{name: platform, sectionName: http}]
   rules:
