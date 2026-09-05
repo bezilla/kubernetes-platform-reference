@@ -50,6 +50,18 @@ data:
     server.port     = 8080
     server.document-root = "/srv/www"
 
+    # Stream the CGI in both directions rather than buffering it.
+    #
+    # Without these, the smart-HTTP handshake succeeds -- info/refs returns 200
+    # and the pkt-line preamble is correct -- and then the actual fetch dies
+    # with "curl 18 transfer closed with outstanding read data remaining" and
+    # "fatal: expected 'packfile'". The negotiation is a POST whose response is
+    # a streamed packfile, and buffered mod_cgi truncates it. The failure is
+    # especially misleading because every probe and every handshake still passes:
+    # the server looks healthy and no clone can complete.
+    server.stream-response-body = 2
+    server.stream-request-body  = 2
+
     # Logs to stderr so `kubectl logs` works and nothing needs a writable
     # /var/log. An unset errorlog means stderr in lighttpd.
     server.pid-file = ""

@@ -70,11 +70,27 @@ helm upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" \
 echo "    Argo CD is up."
 
 # --- 3. the Git server --------------------------------------------------------
+# Wait for the container to be RUNNING, not Ready. Its readiness probe requests
+# the repository over the smart-HTTP handshake, which is the right probe -- a
+# server that is listening but cannot run CGI answers "/" happily and fails
+# every sync. But it means the pod cannot go Ready until something has been
+# published, and publishing needs a running pod to exec into. Waiting for Ready
+# here deadlocks the bring-up against its own probe.
 step "Building and starting the in-cluster Git server"
 ./scripts/git-server-image.sh
 kubectl apply -f bootstrap/git-server.yaml >/dev/null
-kubectl -n platform-system rollout status deploy/git-server --timeout=300s >/dev/null
-echo "    Git server is running (not yet ready: nothing published to it)."
+deadline=$((SECONDS + 300))
+until [ "$(kubectl -n platform-system get pod -l app.kubernetes.io/name=git-server \
+		-o jsonpath='{.items[0].status.containerStatuses[0].state}' 2>/dev/null | grep -c running)" = "1" ]; do
+	if [ "$SECONDS" -ge "$deadline" ]; then
+		echo "up: the Git server container did not start within 300s" >&2
+		kubectl -n platform-system get pods >&2
+		kubectl -n platform-system describe pod -l app.kubernetes.io/name=git-server 2>&1 | tail -20 >&2
+		exit 1
+	fi
+	sleep 3
+done
+echo "    Git server is running. Not Ready yet -- it has no repository to serve."
 
 # --- 4. the sample workload's image -------------------------------------------
 step "Building the sample workload image"
@@ -83,6 +99,8 @@ step "Building the sample workload image"
 # --- 5. publish ---------------------------------------------------------------
 step "Publishing this repository to the in-cluster Git server"
 ./scripts/publish.sh
+echo "    Waiting for the Git server to report Ready now that it has a repository"
+kubectl -n platform-system wait --for=condition=available deploy/git-server --timeout=180s >/dev/null
 
 # --- 6. hand over to Argo CD --------------------------------------------------
 step "Applying the app-of-apps root -- Argo CD takes over from here"
