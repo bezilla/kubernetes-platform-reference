@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: chart · manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          # Verified against both 3.19 and 4.2: the chart renders identically
+          # under each, modulo blank lines, and values.schema.json is enforced
+          # by both. CI pins the 3.x line because that is what most clusters
+          # still run.
+          version: v3.19.0
+      - name: install kubeconform
+        run: |
+          version=0.8.0
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+      - name: helm lint, render, schema and manifest validation
+        run: make lint
+
+  policy:
+    name: guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: install the kyverno CLI
+        run: |
+          # Pinned to the version the suite was verified against. The CLI's
+          # Value/variables file format has changed between minor releases, and
+          # a mismatch shows up as every rule silently "Excluded" rather than as
+          # an error.
+          version=1.19.0
+          curl -sSL "https://github.com/kyverno/kyverno/releases/download/v${version}/kyverno-cli_v${version}_linux_x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin kyverno
+          kyverno version
+      - name: every policy, both directions
+        # Asserts that violations fail AND that compliant resources pass. A
+        # policy matching everything and a policy matching nothing both look
+        # correct if only one direction is checked, and matching-everything is
+        # the bug this repository actually shipped once.
+        run: make policy-test
+
+  identity:
+    name: identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The gate checks every commit, so it needs every commit. With the
+          # default shallow clone it would check one and report success.
+          fetch-depth: 0
+      - name: install gitleaks
+        run: |
+          version=8.24.0
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: identity and attribution over all history
+        # The same file the pre-push hook runs, in its --all-history mode. The
+        # hook is per-clone configuration and does not travel with a clone, so
+        # this is the copy nobody can forget to install.
+        run: ./.githooks/pre-push --all-history
+      - name: prove the gate still rejects bad history
+        run: ./.githooks/selftest.sh
