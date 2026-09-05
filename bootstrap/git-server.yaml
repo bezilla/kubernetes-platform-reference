@@ -6,11 +6,19 @@
 # working tree into this pod and Argo clones from here. `make publish` is this
 # setup's `git push`.
 #
-# It is deliberately dumb HTTP: a bare repository on disk, `update-server-info`
-# run over it, and a static file server. No auth, no smart transport, no state
-# worth backing up. In a real environment you delete this file and point
-# bootstrap/root-application.yaml at GitHub, GitLab or Bitbucket -- the only
-# thing that changes is the repoURL.
+# It serves SMART HTTP, via `git http-backend` under lighttpd's mod_cgi. That is
+# not a detail: Argo CD's repo server is go-git, go-git speaks only the smart
+# transport, and a static file server -- which is what this was first written as
+# -- returns the plain refs file to the smart handshake and produces "failed to
+# list refs: unexpected EOF" on every sync, forever. See the Dockerfile.
+#
+# Stateless by construction: the repository lives in an emptyDir and is
+# repopulated by scripts/publish.sh. Nothing here is worth backing up, there is
+# no database, and deleting the pod costs one `make publish`.
+#
+# In a real environment you delete this file and point bootstrap/root-application
+# and the Applications under platform/applications at GitHub, GitLab or
+# Bitbucket. The only thing that changes is the repoURL.
 #
 # Applied by `make up` alongside Argo CD, not by Argo CD. These two are the
 # bootstrap; everything else in the platform is an Application.
@@ -27,20 +35,46 @@ metadata:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: git-server-nginx
+  name: git-server-lighttpd
   namespace: platform-system
 data:
-  default.conf: |
-    server {
-      listen 8080;
-      root /srv/git;
-      autoindex on;
-      location / {
-        # Loose and packed objects, info/refs and HEAD are all just files.
-        # That is the whole of the dumb HTTP protocol.
-        add_header Cache-Control "no-store";
-      }
-    }
+  lighttpd.conf: |
+    # Everything is CGI. There are no static files to serve -- git-http-backend
+    # answers both the smart endpoints and the dumb ones, so routing anything
+    # around it would only create a second way to be wrong.
+    # mod_alias and mod_setenv are compiled into lighttpd 1.4.85 rather than
+    # shipped as .so files, but they must still be DECLARED here -- omit them
+    # and their directives are silently ignored as "unknown config-key", which
+    # yields a server that starts cleanly and 404s every request.
+    server.modules = ("mod_alias", "mod_setenv", "mod_cgi", "mod_accesslog")
+    server.port     = 8080
+    server.document-root = "/srv/www"
+
+    # Logs to stderr so `kubectl logs` works and nothing needs a writable
+    # /var/log. An unset errorlog means stderr in lighttpd.
+    server.pid-file = ""
+    accesslog.filename = "/dev/stderr"
+
+    # Everything under /git is the CGI program, and the rest of the path becomes
+    # PATH_INFO -- so /git/platform.git/info/refs reaches git-http-backend as
+    # /platform.git/info/refs, which is what it expects.
+    #
+    # The prefix is structural, not cosmetic. lighttpd builds the physical path
+    # by concatenating the alias target with whatever follows the matched
+    # prefix, so a prefix of "/" produces "...git-http-backendplatform.git/..."
+    # with no separator and 404s. The repository name has to survive into
+    # PATH_INFO, so it has to sit after a non-empty prefix. Real remotes carry a
+    # path too; this one is /git.
+    alias.url += ( "/git" => "/usr/libexec/git-core/git-http-backend" )
+    cgi.assign = ( "" => "" )
+
+    setenv.add-environment = (
+      "GIT_PROJECT_ROOT"    => "/srv/git",
+      # Serve every repository under the project root without needing a
+      # git-daemon-export-ok marker in each. There is exactly one repository
+      # here and it is public by design.
+      "GIT_HTTP_EXPORT_ALL" => "1"
+    )
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -58,31 +92,44 @@ spec:
       labels: {app.kubernetes.io/name: git-server, app.kubernetes.io/part-of: platform}
     spec:
       containers:
-        - name: nginx
-          image: nginx:1.29-alpine
+        - name: lighttpd
+          image: platform.local/git-server:0.1.0
+          # Side-loaded into the kind node by scripts/git-server-image.sh. There
+          # is no registry to pull it from, so asking would fail.
+          imagePullPolicy: Never
           ports: [{name: http, containerPort: 8080}]
           volumeMounts:
-            - {name: conf,  mountPath: /etc/nginx/conf.d}
+            - {name: conf,  mountPath: /etc/lighttpd}
             - {name: repos, mountPath: /srv/git}
-            - {name: cache, mountPath: /var/cache/nginx}
-            - {name: run,   mountPath: /var/run}
+            - {name: www,   mountPath: /srv/www}
+            - {name: tmp,   mountPath: /tmp}
           readinessProbe:
-            httpGet: {path: /, port: http}
+            # Probes the smart handshake against the real repository, not `/`.
+            # A server that is listening but cannot run CGI answers `/` happily
+            # and fails every sync -- which is the failure this file exists to
+            # fix, so it is the failure the probe should catch.
+            httpGet: {path: "/git/platform.git/info/refs?service=git-upload-pack", port: http}
             initialDelaySeconds: 2
+            periodSeconds: 5
+            # 404 until the first publish, and that is correct: with no
+            # repository to serve, this pod is not ready to be Argo's remote.
+            failureThreshold: 60
           resources:
             requests: {cpu: 10m, memory: 24Mi}
-            limits:   {cpu: 200m, memory: 64Mi}
+            limits:   {cpu: 500m, memory: 128Mi}
           securityContext:
             runAsNonRoot: true
-            runAsUser: 101
+            runAsUser: 100
+            runAsGroup: 101
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
       volumes:
-        - {name: conf,  configMap: {name: git-server-nginx}}
+        - {name: conf,  configMap: {name: git-server-lighttpd}}
         - {name: repos, emptyDir: {}}
-        - {name: cache, emptyDir: {}}
-        - {name: run,   emptyDir: {}}
+        - {name: www,   emptyDir: {}}
+        - {name: tmp,   emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service

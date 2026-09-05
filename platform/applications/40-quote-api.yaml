@@ -14,7 +14,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: http://git-server.platform-system.svc/platform.git
+    repoURL: http://git-server.platform-system.svc/git/platform.git
     targetRevision: main
     path: charts/paved-road
     helm:

@@ -29,16 +29,16 @@ mkdir -p .work
 git init -q --bare "$MIRROR"
 git push -q "$MIRROR" "+refs/heads/${BRANCH}:refs/heads/${BRANCH}"
 git -C "$MIRROR" symbolic-ref HEAD "refs/heads/${BRANCH}"
-# Without this there is no info/refs and `git ls-remote` over dumb HTTP returns
-# nothing -- Argo would report "unknown revision" against a repository that
-# visibly has commits in it.
-git -C "$MIRROR" update-server-info
+# No `git update-server-info` here. That command exists to generate the static
+# info/refs a DUMB HTTP client reads; the server runs git-http-backend, which
+# answers the smart protocol from the repository itself. Running it anyway would
+# leave a stale file that nothing consults.
 
 kubectl -n "$NS" exec "$pod" -- sh -c 'rm -rf /srv/git/platform.git && mkdir -p /srv/git/platform.git'
 tar -C "$MIRROR" -cf - . | kubectl -n "$NS" exec -i "$pod" -- tar -C /srv/git/platform.git -xf -
 
 sha="$(git rev-parse --short HEAD)"
-echo "publish: ${BRANCH} @ ${sha} -> http://git-server.${NS}.svc/platform.git"
+echo "publish: ${BRANCH} @ ${sha} -> http://git-server.${NS}.svc/git/platform.git"
 
 # Argo polls every three minutes by default. Nudge it so the demonstration does
 # not consist of waiting.
