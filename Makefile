@@ -1,7 +1,19 @@
 # Every target here is what CI runs, so a green local run means a green CI run.
 # Where they differ, CI is the authority.
 
-SHELL := /usr/bin/env bash
+# A recipe runs as plain `bash -c`, where a pipeline reports only its LAST
+# command's status. `make up` died at the Argo CD install with a timeout and
+# still reported exit 0, because the failure was upstream of a pipe. -e stops the
+# recipe on that failure, -o pipefail makes the pipeline carry it, and -u catches
+# an unset variable instead of silently expanding it to nothing.
+#
+# The flags go in SHELL, not .SHELLFLAGS, on purpose: macOS ships GNU Make 3.81,
+# which predates .SHELLFLAGS (3.82) and ignores it without a word -- which is how
+# a "fix" here can look applied and change nothing. `env` passes them through to
+# bash, so this works on 3.81 and on modern make alike. Verified with
+# `make shell-check`, which fails loudly if the options are not actually set.
+SHELL := /usr/bin/env bash -e -u -o pipefail
+.SHELLFLAGS := -c
 
 .DEFAULT_GOAL := help
 
@@ -83,6 +95,12 @@ identity: ## Run the pre-push gate over all of this repository's history
 .PHONY: test-hook
 test-hook: ## Prove the gate still rejects each thing it claims to reject
 	@./.githooks/selftest.sh
+
+.PHONY: shell-check
+shell-check: ## Prove recipes run with -e and -o pipefail (guards the make 3.81 trap)
+	@case "$$SHELLOPTS" in *pipefail*) ;; *) echo "shell-check: pipefail NOT set in recipes"; exit 1;; esac
+	@case "$$SHELLOPTS" in *errexit*) ;; *) echo "shell-check: errexit NOT set in recipes"; exit 1;; esac
+	@echo "shell-check: recipes run with errexit and pipefail"
 
 .PHONY: versions
 versions: ## Every pinned version, in one place
