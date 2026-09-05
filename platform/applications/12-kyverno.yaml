@@ -17,11 +17,21 @@ spec:
   # normalizes that away for the core kinds it ships knowledge of, which is why
   # cert-manager and Envoy Gateway sit Synced with the same defaulting on their
   # Deployments and Services -- but not for CRDs.
+  #
+  # The labels and annotations entries are a different problem wearing the same
+  # clothes. The chart renders `labels: {}` and `annotations: {}` on eleven of
+  # its CRDs; the API server discards empty maps, so Git holds `{}` where the
+  # cluster holds nothing, and Argo reports a difference that no sync can ever
+  # settle. Ignoring metadata on a vendored CRD is a real if narrow loss -- a
+  # label the chart adds later will not show as drift -- and is the cheaper side
+  # of that trade against a permanently amber Application.
   ignoreDifferences:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
       jqPathExpressions:
         - .spec.conversion
+        - .metadata.labels
+        - .metadata.annotations
   source:
     repoURL: https://kyverno.github.io/kyverno
     chart: kyverno

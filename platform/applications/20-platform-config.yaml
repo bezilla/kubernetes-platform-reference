@@ -23,14 +23,18 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       jqPathExpressions:
-        - .spec.listeners[].allowedRoutes.kinds[].group
-        - .spec.listeners[].tls.certificateRefs[].group
+        # `?` on every step. The HTTP listener has no .tls and no
+        # allowedRoutes.kinds, so the unguarded form errors on it, and a
+        # jqPathExpression that errors matches nothing at all -- the rule looks
+        # present and does nothing, which is how this was wrong once already.
+        - .spec.listeners[]?.allowedRoutes?.kinds[]?.group
+        - .spec.listeners[]?.tls?.certificateRefs[]?.group
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       jqPathExpressions:
-        - .spec.parentRefs[].group
-        - .spec.parentRefs[].kind
-        - .spec.rules[].matches
+        - .spec.parentRefs[]?.group
+        - .spec.parentRefs[]?.kind
+        - .spec.rules[]?.matches
     - group: gateway.envoyproxy.io
       kind: EnvoyProxy
       jqPathExpressions:
