@@ -12,6 +12,20 @@ metadata:
   annotations: {argocd.argoproj.io/sync-wave: "4"}
 spec:
   project: default
+  # Kyverno's CRD defaults four fields into every ClusterPolicy it admits.
+  # They are not drift -- nothing set them, nothing can unset them, and a sync
+  # cannot remove them -- but Argo has no built-in normalizer for a custom
+  # resource, so without this every policy reads OutOfSync forever and the one
+  # signal that is supposed to mean "the cluster disagrees with Git" means
+  # nothing. Verified: with these four ignored, this Application reaches Synced.
+  ignoreDifferences:
+    - group: kyverno.io
+      kind: ClusterPolicy
+      jqPathExpressions:
+        - .spec.admission
+        - .spec.emitWarning
+        - .spec.rules[].skipBackgroundRequests
+        - .spec.rules[].validate.allowExistingViolations
   source:
     repoURL: http://git-server.platform-system.svc/git/platform.git
     targetRevision: main

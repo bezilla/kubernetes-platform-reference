@@ -14,6 +14,28 @@ metadata:
   annotations: {argocd.argoproj.io/sync-wave: "3"}
 spec:
   project: default
+  # Gateway API defaults the group and kind on every reference: a parentRef
+  # without a group is a Gateway, a backendRef without one is a Service. Writing
+  # them out in the manifests would work too, and would mean every HTTPRoute an
+  # app team ever writes carries four lines of boilerplate whose only purpose is
+  # to keep a dashboard green.
+  ignoreDifferences:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      jqPathExpressions:
+        - .spec.listeners[].allowedRoutes.kinds[].group
+        - .spec.listeners[].tls.certificateRefs[].group
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      jqPathExpressions:
+        - .spec.parentRefs[].group
+        - .spec.parentRefs[].kind
+        - .spec.rules[].matches
+    - group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      jqPathExpressions:
+        - .spec.logging
+        - .spec.provider.kubernetes.envoyService.externalTrafficPolicy
   source:
     repoURL: http://git-server.platform-system.svc/git/platform.git
     targetRevision: main

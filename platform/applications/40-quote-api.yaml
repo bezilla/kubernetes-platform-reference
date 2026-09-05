@@ -13,6 +13,17 @@ metadata:
   annotations: {argocd.argoproj.io/sync-wave: "6"}
 spec:
   project: default
+  # The same Gateway API reference defaulting as the platform's own routes. This
+  # block is the cost of the chart NOT making app teams write group and kind on
+  # every reference; see 20-platform-config.yaml.
+  ignoreDifferences:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      jqPathExpressions:
+        - .spec.parentRefs[].group
+        - .spec.parentRefs[].kind
+        - .spec.rules[].backendRefs[].group
+        - .spec.rules[].backendRefs[].kind
   source:
     repoURL: http://git-server.platform-system.svc/git/platform.git
     targetRevision: main
