@@ -41,11 +41,25 @@ spec:
           Every container must declare a readinessProbe. Without one the Gateway
           routes to pods that are not yet serving, and a rolling update drops
           requests.
-        pattern:
-          spec:
-            containers:
-              - readinessProbe:
-                  "?*": "?*"
+        # Counting keys, not pattern-matching values. The obvious spelling --
+        #     readinessProbe:
+        #       "?*": "?*"
+        # -- reads as "any key with any value", but `?*` matches a non-empty
+        # STRING, and a probe's only child is httpGet/tcpSocket/exec/grpc, all of
+        # which are maps. So that rule rejected every compliant probe: it blocked
+        # the sample workload, whose readiness probe was correct all along.
+        #
+        # An empty or absent readinessProbe has zero keys. Any real one has at
+        # least one, whatever its type -- which keeps this rule from having to
+        # enumerate probe kinds and go stale when a new one is added.
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                any:
+                  - key: "{{ keys(element.readinessProbe || `{}`) | length(@) }}"
+                    operator: Equals
+                    value: 0
     - name: containers-must-not-run-as-root
       match:
         any:
