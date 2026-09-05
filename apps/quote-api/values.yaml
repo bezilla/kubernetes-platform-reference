@@ -22,7 +22,7 @@ image:
   # registry, so there is nothing to pull and asking would fail.
   pullPolicy: Never
 
-replicas: 2
+replicas: 3
 
 port: 8080
 extraContainerPorts:
