@@ -1,0 +1,29 @@
+# The baseline every variant below is derived from: one Deployment that
+# satisfies all four guardrails. Each violation file is this, with exactly one
+# thing broken, so a rejection can only be caused by the thing that was broken.
+#
+# It mirrors what charts/paved-road renders, which is the point -- a team on the
+# paved road produces this shape without knowing the rules exist.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: policy-probe-nolimits
+  namespace: tenant-quotes
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: policy-probe}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: policy-probe
+        platform.internal/team: payments
+        platform.internal/owner: payments_at_example_com
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 65532}
+      containers:
+        - name: app
+          image: platform.local/quote-api:0.1.0
+          imagePullPolicy: Never
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
