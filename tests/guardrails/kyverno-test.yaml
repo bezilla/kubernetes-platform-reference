@@ -1,0 +1,88 @@
+# The offline half of the guardrail suite: every policy, against one compliant
+# Pod and one Pod per violation, with the expected verdict written down.
+#
+# The `pass` entries matter as much as the `fail` ones. A policy that rejects
+# everything satisfies every fail case and is worse than no policy at all --
+# and a policy that accepts everything satisfies every pass case, which is
+# exactly the bug `disallow-latest-tag` shipped with. Asserting both directions
+# for every policy is what makes this a test rather than a demonstration.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: guardrails
+policies:
+  - ../../platform/config/guardrails/require-resource-limits.yaml
+  - ../../platform/config/guardrails/disallow-latest-tag.yaml
+  - ../../platform/config/guardrails/require-ownership-labels.yaml
+  - ../../platform/config/guardrails/require-probes-and-nonroot.yaml
+variables: values.yaml
+resources:
+  - pods/resources.yaml
+results:
+  # --- require-resource-limits ------------------------------------------------
+  - policy: require-resource-limits
+    rule: containers-must-declare-resources
+    kind: Pod
+    resources: [no-resource-limits]
+    result: fail
+  - policy: require-resource-limits
+    rule: containers-must-declare-resources
+    kind: Pod
+    resources: [compliant, latest-tag, missing-team-label, no-readiness-probe, runs-as-root, untagged-image]
+    result: pass
+
+  # --- disallow-latest-tag ----------------------------------------------------
+  - policy: disallow-latest-tag
+    rule: image-tag-must-be-explicit
+    kind: Pod
+    resources: [latest-tag]
+    result: fail
+  - policy: disallow-latest-tag
+    rule: image-tag-must-be-explicit
+    kind: Pod
+    resources: [compliant, no-resource-limits, missing-team-label, no-readiness-probe, runs-as-root, untagged-image]
+    result: pass
+  - policy: disallow-latest-tag
+    rule: image-tag-must-be-present
+    kind: Pod
+    resources: [untagged-image]
+    result: fail
+  - policy: disallow-latest-tag
+    rule: image-tag-must-be-present
+    kind: Pod
+    resources: [compliant, latest-tag, no-resource-limits, missing-team-label, no-readiness-probe, runs-as-root]
+    result: pass
+
+  # --- require-ownership-labels -----------------------------------------------
+  - policy: require-ownership-labels
+    rule: workloads-must-name-an-owner
+    kind: Pod
+    resources: [missing-team-label]
+    result: fail
+  - policy: require-ownership-labels
+    rule: workloads-must-name-an-owner
+    kind: Pod
+    resources: [compliant, latest-tag, no-resource-limits, no-readiness-probe, runs-as-root, untagged-image]
+    result: pass
+
+  # --- require-probes-and-nonroot ---------------------------------------------
+  - policy: require-probes-and-nonroot
+    rule: containers-must-declare-readiness
+    kind: Pod
+    resources: [no-readiness-probe]
+    result: fail
+  - policy: require-probes-and-nonroot
+    rule: containers-must-declare-readiness
+    kind: Pod
+    resources: [compliant, latest-tag, no-resource-limits, missing-team-label, runs-as-root, untagged-image]
+    result: pass
+  - policy: require-probes-and-nonroot
+    rule: containers-must-not-run-as-root
+    kind: Pod
+    resources: [runs-as-root]
+    result: fail
+  - policy: require-probes-and-nonroot
+    rule: containers-must-not-run-as-root
+    kind: Pod
+    resources: [compliant, latest-tag, no-resource-limits, missing-team-label, no-readiness-probe, untagged-image]
+    result: pass

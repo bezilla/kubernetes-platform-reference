@@ -1,0 +1,19 @@
+# Without this the entire suite silently evaluates nothing.
+#
+# Every guardrail is scoped by namespaceSelector to namespaces labelled
+# platform.internal/paved-road: "true". Offline there is no cluster to read that
+# label from, so the CLI treats every rule as not-matching and reports the whole
+# suite as passing -- 42 green rows, every one of them "Excluded", testing
+# exactly nothing. That is the same class of false confidence as the policy bug
+# this suite was written to catch.
+#
+# This file supplies the namespace's labels so the selectors resolve and the
+# rules actually run.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Value
+metadata:
+  name: guardrail-namespaces
+namespaceSelector:
+  - name: tenant-quotes
+    labels:
+      platform.internal/paved-road: "true"

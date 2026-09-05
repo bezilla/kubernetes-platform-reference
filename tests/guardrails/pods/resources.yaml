@@ -1,0 +1,136 @@
+# Pods, not Deployments, for the offline suite.
+#
+# The policies declare `kinds: [Pod]`; Kyverno's autogen then derives the
+# Deployment/StatefulSet/DaemonSet variants at admission time. Testing the Pod
+# form tests the rule as written rather than the rule as generated, so a failure
+# here points at the policy and not at autogen.
+#
+# The cluster-side suite (scripts/demo-guardrails.sh) covers the Deployment form
+# and the real admission path. Neither replaces the other.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compliant
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: compliant
+    platform.internal/team: payments
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: app
+      image: platform.local/quote-api:0.1.0
+      readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-resource-limits
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: no-resource-limits
+    platform.internal/team: payments
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: app
+      image: platform.local/quote-api:0.1.0
+      readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: latest-tag
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: latest-tag
+    platform.internal/team: payments
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: app
+      image: platform.local/quote-api:latest
+      readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untagged-image
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: untagged-image
+    platform.internal/team: payments
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: app
+      image: platform.local/quote-api
+      readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: missing-team-label
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: missing-team-label
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: app
+      image: platform.local/quote-api:0.1.0
+      readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-readiness-probe
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: no-readiness-probe
+    platform.internal/team: payments
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: app
+      image: platform.local/quote-api:0.1.0
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: runs-as-root
+  namespace: tenant-quotes
+  labels:
+    app.kubernetes.io/name: runs-as-root
+    platform.internal/team: payments
+    platform.internal/owner: payments_at_example_com
+spec:
+  securityContext: {runAsNonRoot: false}
+  containers:
+    - name: app
+      image: platform.local/quote-api:0.1.0
+      readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
