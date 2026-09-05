@@ -18,7 +18,10 @@ spec:
   # The one place the implementation is named. Swapping Envoy Gateway for Istio
   # or Cilium changes this string and the Application that installs it.
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
-  description: The paved-road edge. One Gateway, wildcard TLS, tenant HTTPRoutes.
+  # GatewayClass.spec.description is capped at 64 bytes by the CRD. The obvious
+  # sentence is 66 and the API server rejects the whole object, which takes the
+  # Gateway, both certificates and every route down with it.
+  description: One Gateway, wildcard TLS, tenant-owned HTTPRoutes.
   parametersRef:
     group: gateway.envoyproxy.io
     kind: EnvoyProxy
