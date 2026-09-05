@@ -1,4 +1,7 @@
-# Wave 0: the Gateway API implementation, and the Gateway API CRDs it brings.
+# Wave 1: the Gateway API implementation, and the Gateway API CRDs it brings.
+#
+# Nothing here needs cert-manager. The wave number buys serialised installation,
+# not ordering -- see the note in 10-cert-manager.yaml.
 #
 # Envoy Gateway is the implementation, not the interface. The interface is
 # GatewayClass/Gateway/HTTPRoute, and nothing an app team writes names Envoy.
@@ -9,7 +12,7 @@ kind: Application
 metadata:
   name: envoy-gateway
   namespace: argocd
-  annotations: {argocd.argoproj.io/sync-wave: "0"}
+  annotations: {argocd.argoproj.io/sync-wave: "1"}
 spec:
   project: default
   source:

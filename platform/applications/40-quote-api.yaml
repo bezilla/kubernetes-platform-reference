@@ -1,4 +1,4 @@
-# Wave 3: a workload, deployed the way every workload on this platform is
+# Wave 6: a workload, deployed the way every workload on this platform is
 # deployed -- the authored chart, plus one values file the app team owns.
 #
 # Everything specific to this service is in apps/quote-api/values.yaml. Nothing
@@ -10,7 +10,7 @@ kind: Application
 metadata:
   name: quote-api
   namespace: argocd
-  annotations: {argocd.argoproj.io/sync-wave: "3"}
+  annotations: {argocd.argoproj.io/sync-wave: "6"}
 spec:
   project: default
   source:

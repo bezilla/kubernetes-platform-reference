@@ -1,4 +1,4 @@
-# Wave 2: the Kyverno policies, after the admission controller that serves them.
+# Wave 4: the Kyverno policies, after the admission controller that serves them.
 #
 # Separated from the Kyverno install on purpose. The controller is a vendored
 # upstream chart on a version pin; the policies are this platform's own rules and
@@ -9,7 +9,7 @@ kind: Application
 metadata:
   name: guardrails
   namespace: argocd
-  annotations: {argocd.argoproj.io/sync-wave: "2"}
+  annotations: {argocd.argoproj.io/sync-wave: "4"}
 spec:
   project: default
   source:

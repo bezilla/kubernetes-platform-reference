@@ -1,5 +1,14 @@
 # Wave 0: cert-manager, ahead of anything that asks for a certificate.
 #
+# One component per wave, throughout. Waves 0-2 have no ordering dependency on
+# each other -- cert-manager, Envoy Gateway and Kyverno are independent installs
+# -- and were all wave 0 until three concurrent Helm installs plus their CRD
+# registrations saturated a single-node cluster and starved the API server into
+# a TLS handshake timeout. Argo waits for a wave to be healthy before starting
+# the next, so serialising them costs perhaps ninety seconds and removes the
+# thundering herd. On a cluster with room, collapsing 0-2 back into one wave is
+# the right call.
+#
 # The platform issues its own certificates from a CA it creates at install time,
 # so app teams never see an issuer, a CSR, or a renewal. On a real cluster this
 # ClusterIssuer would be ACME against Let's Encrypt or a private PKI; the

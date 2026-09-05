@@ -1,4 +1,4 @@
-# Wave 1: everything the platform declares for itself once its controllers are
+# Wave 3: everything the platform declares for itself once its controllers are
 # running -- the tenant namespaces, the CA and ClusterIssuer, the GatewayClass,
 # the shared Gateway and its wildcard certificate, and the NodePort that carries
 # the edge out to the host.
@@ -11,7 +11,7 @@ kind: Application
 metadata:
   name: platform-config
   namespace: argocd
-  annotations: {argocd.argoproj.io/sync-wave: "1"}
+  annotations: {argocd.argoproj.io/sync-wave: "3"}
 spec:
   project: default
   source:

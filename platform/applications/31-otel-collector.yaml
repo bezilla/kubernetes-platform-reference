@@ -1,4 +1,4 @@
-# Wave 2: the OTLP endpoint the paved-road chart wires every workload to.
+# Wave 5: the OTLP endpoint the paved-road chart wires every workload to.
 #
 # The chart sets OTEL_EXPORTER_OTLP_ENDPOINT on every container it renders, so
 # "observability wiring" is not something an app team configures -- it is
@@ -14,7 +14,7 @@ kind: Application
 metadata:
   name: otel-collector
   namespace: argocd
-  annotations: {argocd.argoproj.io/sync-wave: "2"}
+  annotations: {argocd.argoproj.io/sync-wave: "5"}
 spec:
   project: default
   source:
