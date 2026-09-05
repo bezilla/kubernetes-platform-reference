@@ -33,10 +33,29 @@ spec:
           Images must carry an explicit tag that is not `latest`. A floating tag
           means the manifest and the running code are two different facts, and
           Argo CD cannot see the difference.
-        pattern:
-          spec:
-            containers:
-              - image: "!*:latest | !*:latest@* "
+        # Written as a foreach/deny rather than a pattern. The pattern this
+        # replaced was
+        #     image: "!*:latest | !*:latest@* "
+        # which looks like "not :latest, and not :latest with a digest" and is
+        # neither. Kyverno patterns have no `|` alternation operator -- that is
+        # what anyPattern is for -- so the whole thing was read as one literal
+        # wildcard string, matched everything, and the rule admitted `:latest`
+        # without complaint. It was verified by watching a `:latest` deployment
+        # be accepted, not by reading the YAML, because reading the YAML is what
+        # produced it.
+        #
+        # The regex covers both spellings: `repo:latest` and the digest-pinned
+        # `repo:latest@sha256:...`, where [^@]* stops at the digest boundary. A
+        # registry port (`host:5000/repo:latest`) still matches, because the
+        # final `:latest` is what is being looked for, not the first colon.
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^[^@]*:latest(@.*)?$', element.image) }}"
+                    operator: Equals
+                    value: true
     - name: image-tag-must-be-present
       match:
         any:
