@@ -43,7 +43,10 @@ dex:
 notifications:
   enabled: false          # nothing to notify
 applicationSet:
-  enabled: false          # the app-of-apps root is a plain Application
+  # The chart has no on/off switch for this controller, only a replica count.
+  # The app-of-apps root is a plain Application, so nothing here generates
+  # Applications from a template and the controller has no work to do.
+  replicas: 0
 
 redis:
   resources:
@@ -53,7 +56,20 @@ controller:
     requests: {cpu: 100m, memory: 192Mi}
 repoServer:
   resources:
-    requests: {cpu: 50m, memory: 128Mi}
+    requests: {cpu: 100m, memory: 192Mi}
+  # The default liveness probe hits /healthz?full=true with a one-second
+  # timeout, and that endpoint shells out to `git` and `helm`. While the repo
+  # server is downloading four upstream charts at once on a laptop, one second
+  # is not enough, the probe fails three times, and Kubernetes restarts the
+  # process mid-download -- which looks exactly like a broken Application and is
+  # not. More patience, not more resources: the work is I/O, not CPU.
+  livenessProbe:
+    timeoutSeconds: 10
+    periodSeconds: 20
+    failureThreshold: 10
+  readinessProbe:
+    timeoutSeconds: 5
+    failureThreshold: 6
 server:
   resources:
     requests: {cpu: 25m, memory: 96Mi}
