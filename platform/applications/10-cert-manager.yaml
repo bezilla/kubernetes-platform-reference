@@ -4,10 +4,25 @@
 # each other -- cert-manager, Envoy Gateway and Kyverno are independent installs
 # -- and were all wave 0 until three concurrent Helm installs plus their CRD
 # registrations saturated a single-node cluster and starved the API server into
-# a TLS handshake timeout. Argo waits for a wave to be healthy before starting
-# the next, so serialising them costs perhaps ninety seconds and removes the
-# thundering herd. On a cluster with room, collapsing 0-2 back into one wave is
-# the right call.
+# a TLS handshake timeout.
+#
+# How much this actually serialises, measured rather than assumed: the waves
+# order the CREATION of these Application objects, but each child below carries
+# its own syncPolicy.automated, so a child begins syncing the moment it exists
+# and does not wait for an earlier wave to finish. otel-collector at wave 5 was
+# observed Synced while envoy-gateway at wave 1 was still Degraded. The waves
+# stagger the start; they do not hold a barrier between components.
+#
+# Left as is deliberately. The alternative -- dropping automated sync from the
+# children so the root drives every sync in strict order -- would buy a real
+# barrier at the cost of self-healing and of the property that a commit changes
+# the cluster on its own, which is the thing this repository exists to show.
+# Staggered starts were enough: the API server stayed reachable for the whole
+# install afterwards.
+#
+# Waves DO hold strictly within a single Application, where Argo waits for each
+# wave to go healthy before the next. platform/config/edge relies on that, and
+# deadlocked once when a certificate was ordered ahead of its issuer.
 #
 # The platform issues its own certificates from a CA it creates at install time,
 # so app teams never see an issuer, a CSR, or a renewal. On a real cluster this
