@@ -7,16 +7,24 @@
 #   1. identity     every commit is authored AND committed by the one canonical
 #                   person. Identity is baked into the commit hash, so fixing it
 #                   after a push means rewriting published history.
-#   2. attribution  no assistant or generated-by marks, in commit messages or in
-#                   the tree at any commit in the range.
+#   2. trailers     an allowlist. Only Signed-off-by (carrying exactly the
+#                   canonical identity), Verified and Measured (both free text)
+#                   may appear. Every other trailer key is refused.
 #   3. secrets      gitleaks over history, failing closed.
 #
-# The forbidden terms are written with single-character bracket expressions: in a
-# POSIX extended regex [x] matches exactly x, so each pattern is literal while
-# this file's own bytes contain none of the terms it bans. That is what lets the
-# hook scan a tree that includes itself. Do not "simplify" the brackets away —
-# the hook self-checks the pattern against known-hit and known-miss probes on
-# every run, and `make test-hook` case 0 checks it again from outside.
+# Why an allowlist rather than a list of vendor names to search for. A denylist
+# only catches what somebody thought to write down: it is stale the day a new
+# tool ships, it names vendors in a repository that would rather not, and it has
+# to be smuggled past its own scan. An allowlist inverts that. Any tool that
+# stamps provenance onto a commit does it through a trailer, so an unlisted key
+# is refused whether or not this file has heard of the thing that wrote it.
+#
+# Trailers are read with `git interpret-trailers --parse`, which is git's own
+# definition: the last paragraph, and only when it parses as trailers. A line
+# like "Verified: ..." earlier in a message is prose, not a trailer, and is not
+# treated as one -- a `^Key:` regex would reject ordinary commit prose in every
+# repository in this family. See DESIGN.md, "Why the identity gate allowlists
+# trailers".
 #
 # Installed by `make init`, which sets core.hooksPath=.githooks. That setting is
 # per-clone and does NOT travel with a clone, so the same rules run server-side
@@ -33,14 +41,10 @@ CANONICAL_NAME='Paul Bezilla'
 CANONICAL_EMAIL='bezilla@protonmail.com'
 CANONICAL="${CANONICAL_NAME} <${CANONICAL_EMAIL}>"
 
-# Bracketed so this file contains zero literal instances of the terms.
-FORBIDDEN='c[l]aude|anthrop[i]c|co-auth[o]red|cop[i]lot|chatg[p]t|open[a]i|gpt-[0-9]|generated[- ]with[- ]a[i]|a[i]-assisted|a[i]-generated'
-
-# Every scan in this file goes through this one function, reading stdin, so the
-# self-check below exercises the exact code that scans real history rather than
-# a lookalike. -I skips binary content, which is the same limit `git grep -I`
-# had here before: a forbidden term inside a binary blob is not caught.
-matches_forbidden() { grep -qIiE "$FORBIDDEN"; }
+# The whole policy. Signed-off-by must carry the canonical identity exactly;
+# Verified and Measured are free text and are here because both are already in
+# published history, recording evidence rather than authorship.
+ALLOWED_TRAILERS='Signed-off-by, Verified, Measured'
 
 ZERO='0000000000000000000000000000000000000000'
 
@@ -49,21 +53,38 @@ fail() {
 	exit 1
 }
 
-# --- prove the scanner works before trusting it -------------------------------
-# A scanner is only evidence once it has been watched to match AND to not match.
-# One direction cannot tell a working pattern from one that matches everything,
-# nor from an engine that silently matches nothing -- and "nothing matched" is
-# precisely what a broken regex looks like from the outside: no output, exit 0,
-# no diagnostic. That is how a gate reports a clean history it never read.
-#
-# Both probes are built from octal escapes, so this file still contains no
-# literal forbidden term and can therefore scan itself.
-probe_hit="$(printf 'C\154aude')"
-probe_miss='an ordinary commit message about ordinary work'
-printf '%s\n' "$probe_hit" | matches_forbidden ||
-	fail 'scanner did not match a known-forbidden probe -- the pattern or the regex engine is broken, refusing to certify anything'
-printf '%s\n' "$probe_miss" | matches_forbidden &&
-	fail 'scanner matched a known-clean probe -- the pattern matches everything, so a pass means nothing'
+# --- the trailer allowlist ----------------------------------------------------
+# Returns non-zero and explains on the first trailer outside the allowlist.
+check_trailers() {
+	local what="$1" text="$2" trailers line key value
+	trailers="$(printf '%s\n' "$text" | git interpret-trailers --parse 2>/dev/null || true)"
+	[ -z "$trailers" ] && return 0
+
+	while IFS= read -r line; do
+		[ -z "$line" ] && continue
+		key="${line%%:*}"
+		value="${line#*:}"
+		value="${value# }"
+		case "$key" in
+			'Signed-off-by')
+				if [ "$value" != "$CANONICAL" ]; then
+					printf 'pre-push: %s carries "Signed-off-by: %s", expected "%s"\n' \
+						"$what" "$value" "$CANONICAL" >&2
+					return 1
+				fi
+				;;
+			'Verified'|'Measured')
+				: # free text, by design
+				;;
+			*)
+				printf 'pre-push: %s carries disallowed trailer "%s" (allowed: %s)\n' \
+					"$what" "$key" "$ALLOWED_TRAILERS" >&2
+				return 1
+				;;
+		esac
+	done <<< "$trailers"
+	return 0
+}
 
 # --- collect the commits to check ---------------------------------------------
 # Two modes. In hook mode git feeds us one line per ref being pushed; ranges are
@@ -102,16 +123,44 @@ collect_commits() {
 	printf '%s' "$out"
 }
 
-remote_name="${1:-origin}"
-commits="$(collect_commits "${1:-}" | grep -v '^$' | sort -u || true)"
+# Echoes "<refname> <objectname>" per tag under consideration. Same two modes,
+# same scope, as collect_commits.
+collect_tags() {
+	if [ "${1:-}" = '--all-history' ]; then
+		git for-each-ref --format='%(refname) %(objectname)' refs/tags
+		return 0
+	fi
 
-# Pushing nothing, or a pure deletion, is not an occasion to fail.
-[ -z "$commits" ] && {
-	printf 'pre-push: no commits to check\n' >&2
-	exit 0
+	local local_ref local_sha _remote_ref _remote_sha
+	while read -r local_ref local_sha _remote_ref _remote_sha; do
+		[ -z "${local_sha:-}" ] && continue
+		[ "$local_sha" = "$ZERO" ] && continue
+		case "$local_ref" in
+			refs/tags/*) printf '%s %s\n' "$local_ref" "$local_sha" ;;
+		esac
+	done
 }
 
+remote_name="${1:-origin}"
+
+# stdin can only be read once and both walks need it, so it is captured here and
+# fed to each. collect_commits itself is unchanged: it still reads its own stdin.
+push_input=''
+if [ "${1:-}" != '--all-history' ]; then
+	push_input="$(cat)"
+fi
+
+commits="$(collect_commits "${1:-}" <<< "$push_input" | grep -v '^$' | sort -u || true)"
+tags="$(collect_tags "${1:-}" <<< "$push_input" | grep -v '^$' || true)"
+
+# Pushing nothing, or a pure deletion, is not an occasion to fail.
+if [ -z "$commits" ] && [ -z "$tags" ]; then
+	printf 'pre-push: no commits or tags to check\n' >&2
+	exit 0
+fi
+
 n=0
+if [ -n "$commits" ]; then
 while read -r sha; do
 	[ -z "$sha" ] && continue
 	n=$((n + 1))
@@ -127,47 +176,35 @@ while read -r sha; do
 	[ "$committer" = "$CANONICAL" ] ||
 		fail "commit ${sha:0:12} committer is '${committer}', expected '${CANONICAL}'"
 
-	# --- 2. attribution -------------------------------------------------------
-	# The whole message: subject, body and trailers.
-	if git show -s --format='%B' "$sha" | matches_forbidden; then
-		fail "commit ${sha:0:12} message contains a forbidden attribution term"
-	fi
-
-	# The tree AS OF this commit, not just the final tree. A term that lands in
-	# one commit and is deleted by a later commit in the same push is still
-	# published history, and checking only the tip would miss it.
-	#
-	# Blobs are read out and piped to grep rather than scanned with `git grep`.
-	# git grep does not use the system regex engine: given a pattern it cannot
-	# honour -- \b and (?i) among them -- it matches NOTHING and says nothing,
-	# exiting 0. A gate that reads "no output" as "clean" then certifies every
-	# commit it was pointed at, and looks exactly like a gate that worked. The
-	# only defence is the self-check above plus a scanner whose semantics are
-	# the ones the pattern was written against. See DESIGN.md, "Scanning
-	# history is not grepping a checkout".
-	hits=''
-	while IFS= read -r -d '' entry; do
-		# `<mode> <type> <oid>` then a TAB then the path, which -z leaves
-		# unquoted so paths with spaces or quotes survive intact.
-		meta="${entry%%$'\t'*}"
-		# Not `path`: in zsh that name is tied to $PATH, and assigning to it
-		# empties the command search path. This hook runs under bash, where
-		# the name is harmless, but the same loop gets copied into shells
-		# where it is not.
-		blob_path="${entry#*$'\t'}"
-		read -r _mode blob_type blob_oid <<<"$meta"
-		[ "${blob_type:-}" = 'blob' ] || continue
-		if git cat-file blob "${blob_oid:-}" 2>/dev/null | matches_forbidden; then
-			hits="${hits}${blob_path}"$'\n'
-		fi
-	done < <(git ls-tree -r -z "$sha")
-
-	if [ -n "$hits" ]; then
-		printf 'pre-push: commit %s has forbidden terms in:\n' "${sha:0:12}" >&2
-		printf '%s' "$hits" | sed 's/^/  /' >&2
-		exit 1
-	fi
+	# --- 2. trailers ----------------------------------------------------------
+	# The whole message goes to git's own trailer parser, which reads only the
+	# last paragraph and only when it parses as trailers.
+	check_trailers "commit ${sha:0:12}" "$(git show -s --format='%B' "$sha")" || exit 1
 done <<< "$commits"
+fi
+
+# --- 2b. tags -----------------------------------------------------------------
+# Nothing checked these before. The tagger is an identity field like any other,
+# and the annotation body is a message like any other, so a tag was a place to
+# put a trailer the commit gate would have refused.
+t=0
+if [ -n "$tags" ]; then
+	while read -r ref obj; do
+		[ -z "${obj:-}" ] && continue
+		# A lightweight tag only points at a commit already checked above; it
+		# carries no tagger and no message of its own.
+		[ "$(git cat-file -t "$obj" 2>/dev/null || true)" = 'tag' ] || continue
+		t=$((t + 1))
+
+		raw="$(git cat-file tag "$obj")"
+		tagger="$(printf '%s\n' "$raw" | sed -n 's/^tagger \(.*\) [0-9][0-9]* [-+][0-9][0-9][0-9][0-9]$/\1/p' | head -1)"
+		[ "$tagger" = "$CANONICAL" ] ||
+			fail "tag ${ref#refs/tags/} tagger is '${tagger}', expected '${CANONICAL}'"
+
+		# Everything after the header's blank line is the annotation body.
+		check_trailers "tag ${ref#refs/tags/}" "$(printf '%s\n' "$raw" | sed '1,/^$/d')" || exit 1
+	done <<< "$tags"
+fi
 
 # --- 3. secrets ---------------------------------------------------------------
 # Fails closed: a gate that skips silently when its scanner is missing is not a
@@ -180,5 +217,5 @@ if ! leaks="$(gitleaks git --no-banner --redact --log-level error . 2>&1)"; then
 	exit 1
 fi
 
-printf 'pre-push: %d commit(s) checked -- identity, attribution, secrets all clean\n' "$n" >&2
+printf 'pre-push: %d commit(s) and %d annotated tag(s) checked -- identity, trailers, secrets all clean\n' "$n" "$t" >&2
 exit 0

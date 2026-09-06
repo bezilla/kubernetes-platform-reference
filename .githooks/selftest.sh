@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 #
-# selftest: proves the pre-push gate actually rejects what it claims to reject.
+# selftest: proves the pre-push gate rejects what it claims to reject, and --
+# just as important -- accepts what it claims to accept.
 #
-# A gate nobody has watched fail is a gate nobody knows works. Each case below
-# builds a throwaway repository, produces exactly one kind of bad history, and
-# feeds the hook the same stdin git would feed it on a real push:
+# A gate nobody has watched fail is a gate nobody knows works, and a gate only
+# ever watched to fail could be one that refuses everything, which breaks a
+# repository just as completely. Each case builds a throwaway repository,
+# produces exactly one kind of history, and feeds the hook the same stdin git
+# would feed it on a real push:
 #
 #     <local ref> <local sha> <remote ref> <remote sha>
 #
-# The forbidden literals are BUILT AT RUNTIME from octal escapes. This file is
-# committed, so the hook scans it too; if the literals appeared here directly the
-# suite would make the repository unpushable. Case 0 checks the constructed
-# strings really do match the hook's pattern, so the escaping cannot rot into a
-# test that passes by testing nothing.
+# Every case captures the hook's status with `|| rc=$?` rather than running it
+# bare and reading `$?`. That is not style. CI runs its steps under
+# `bash -eo pipefail`, where a bare non-zero command kills the step before the
+# assertion is reached, so a suite written the other way reports nothing on
+# precisely the cases it exists to prove. This file is run under -e, under plain
+# bash and through its shebang, and must give identical results under all three.
 
 set -uo pipefail
 
@@ -20,17 +24,13 @@ HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-push"
 ZERO='0000000000000000000000000000000000000000'
 CANON_NAME='Paul Bezilla'
 CANON_EMAIL='bezilla@protonmail.com'
-
-# Built from octal escapes so this file contains none of them literally.
-TERM_ASSISTANT="$(printf 'C\154aude')"
-TERM_VENDOR="$(printf 'Anthrop\151c')"
-TERM_TRAILER="$(printf 'Co-Auth\157red-By')"
+CANON="${CANON_NAME} <${CANON_EMAIL}>"
 
 pass=0
 fail=0
 
-ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
-bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=$((fail + 1)); }
+ok()  { printf '  \033[32mok\033[0m   %-60s rc=%s\n' "$1" "${2:-0}"; pass=$((pass + 1)); }
+bad() { printf '  \033[31mFAIL\033[0m %-60s rc=%s\n' "$1" "${2:-?}"; fail=$((fail + 1)); }
 
 # Build a throwaway repo with one clean commit. Echoes its path.
 new_repo() {
@@ -45,130 +45,175 @@ new_repo() {
 	printf '%s' "$d"
 }
 
-# run_hook <repo> <remote_sha>  -> echoes exit status
+commit_msg() {
+	local d="$1" msg="$2"
+	printf 'x %s\n' "$RANDOM" > "$d/file.txt"
+	git -C "$d" add -- file.txt
+	git -C "$d" commit -q -m "$msg"
+}
+
+# Push-range mode, as git invokes it.
 run_hook() {
-	local d="$1" base="$2" tip
+	local d="$1" base="$2" tip rc=0
 	tip="$(git -C "$d" rev-parse HEAD)"
-	( cd "$d" && printf 'refs/heads/main %s refs/heads/main %s\n' "$tip" "$base" | "$HOOK" origin >/dev/null 2>&1 )
-	printf '%s' "$?"
+	( cd "$d" && printf 'refs/heads/main %s refs/heads/main %s\n' "$tip" "$base" \
+		| "$HOOK" origin >/dev/null 2>&1 ) || rc=$?
+	printf '%s' "$rc"
 }
 
-# --- case 0: the escaping is real ---------------------------------------------
-pattern="$(grep -m1 '^FORBIDDEN=' "$HOOK" | sed "s/^FORBIDDEN='//; s/'$//")"
-miss=0
-for t in "$TERM_ASSISTANT" "$TERM_VENDOR" "$TERM_TRAILER"; do
-	printf '%s\n' "$t" | grep -qiE "$pattern" || miss=$((miss + 1))
-done
-# The other direction, for the same reason the guardrail suites check both: a
-# pattern that matches everything and a pattern that matches nothing are
-# indistinguishable if you only ever watch it match.
-false_hit=0
-printf '%s\n' 'an ordinary commit message about ordinary work' | grep -qiE "$pattern" && false_hit=1
-if [ "$miss" -eq 0 ] && [ "$false_hit" -eq 0 ]; then
-	ok 'runtime-built literals match the hook pattern, and a clean string does not'
-elif [ "$miss" -ne 0 ]; then
-	bad "$miss runtime-built literal(s) no longer match the pattern -- the suite is testing nothing"
-else
-	bad 'the hook pattern matches a clean string -- it matches everything, so a pass proves nothing'
-fi
-
-# Reads a tree the way the hook does: blob by blob, through the system regex.
-# `git grep` is not used here for the reason recorded in DESIGN.md -- it can
-# match nothing, silently and successfully, and this check reads "no match" as
-# "the tip is clean", which would make case 6 assert its precondition wrongly.
-tree_has_term() {
-	local d="$1" rev="$2" entry meta _m blob_type blob_oid
-	while IFS= read -r -d '' entry; do
-		meta="${entry%%$'\t'*}"
-		read -r _m blob_type blob_oid <<<"$meta"
-		[ "${blob_type:-}" = 'blob' ] || continue
-		if git -C "$d" cat-file blob "${blob_oid:-}" 2>/dev/null | grep -qIiE "$pattern"; then
-			return 0
-		fi
-	done < <(git -C "$d" ls-tree -r -z "$rev")
-	return 1
+# Push-range mode for a tag ref.
+run_hook_tag() {
+	local d="$1" tagname="$2" obj rc=0
+	obj="$(git -C "$d" rev-parse "refs/tags/${tagname}")"
+	( cd "$d" && printf 'refs/tags/%s %s refs/tags/%s %s\n' "$tagname" "$obj" "$tagname" "$ZERO" \
+		| "$HOOK" origin >/dev/null 2>&1 ) || rc=$?
+	printf '%s' "$rc"
 }
 
-# --- case 1: canonical identity passes ----------------------------------------
-d="$(new_repo)"
-printf 'a change\n' > "$d/file.txt"
-git -C "$d" add -- file.txt
-git -C "$d" commit -q -m 'Add a file'
-rc="$(run_hook "$d" "$ZERO")"
-[ "$rc" = '0' ] && ok 'canonical identity, clean tree: accepted' \
-                || bad "canonical identity was REJECTED (rc=$rc) -- the gate blocks good history"
+# --all-history mode, as the CI job invokes it.
+run_hook_all() {
+	local d="$1" rc=0
+	( cd "$d" && "$HOOK" --all-history >/dev/null 2>&1 ) || rc=$?
+	printf '%s' "$rc"
+}
+
+# --- 1: a clean commit is accepted --------------------------------------------
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file'
+rc="$(run_hook "$d" "$base")"
+[ "$rc" = '0' ] && ok 'clean commit: accepted' "$rc" \
+                || bad 'clean commit was REJECTED -- the gate blocks good history' "$rc"
 rm -rf "$d"
 
-# --- case 2: wrong author fails -----------------------------------------------
-d="$(new_repo)"
-base="$(git -C "$d" rev-parse HEAD)"
-printf 'x\n' > "$d/file.txt"
-git -C "$d" add -- file.txt
+# --- 2: wrong author is rejected ----------------------------------------------
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+printf 'x\n' > "$d/file.txt"; git -C "$d" add -- file.txt
 GIT_AUTHOR_NAME='Somebody Else' GIT_AUTHOR_EMAIL='somebody@example.invalid' \
 	git -C "$d" commit -q -m 'Wrong author'
 rc="$(run_hook "$d" "$base")"
-[ "$rc" != '0' ] && ok 'wrong author: rejected' || bad 'wrong AUTHOR was accepted'
+[ "$rc" != '0' ] && ok 'wrong author: rejected' "$rc" || bad 'wrong AUTHOR was accepted' "$rc"
 rm -rf "$d"
 
-# --- case 3: wrong committer fails --------------------------------------------
-# Distinct from case 2: server-side merges rewrite the committer while leaving
-# the author intact, so checking only the author would miss every merge-button
-# commit.
-d="$(new_repo)"
-base="$(git -C "$d" rev-parse HEAD)"
-printf 'x\n' > "$d/file.txt"
-git -C "$d" add -- file.txt
+# --- 3: wrong committer is rejected -------------------------------------------
+# Distinct from case 2: every server-side merge mode rewrites the committer and
+# leaves the author intact, so checking only the author misses all of them.
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+printf 'x\n' > "$d/file.txt"; git -C "$d" add -- file.txt
 GIT_COMMITTER_NAME='Some Service' GIT_COMMITTER_EMAIL='noreply@example.invalid' \
 	git -C "$d" commit -q -m 'Wrong committer'
 rc="$(run_hook "$d" "$base")"
-[ "$rc" != '0' ] && ok 'wrong committer: rejected' || bad 'wrong COMMITTER was accepted'
+[ "$rc" != '0' ] && ok 'wrong committer: rejected' "$rc" || bad 'wrong COMMITTER was accepted' "$rc"
 rm -rf "$d"
 
-# --- case 4: attribution trailer in the message fails -------------------------
-d="$(new_repo)"
-base="$(git -C "$d" rev-parse HEAD)"
-printf 'x\n' > "$d/file.txt"
-git -C "$d" add -- file.txt
-git -C "$d" commit -q -m "Add a file
+# --- 4: a trailer key outside the allowlist is rejected -----------------------
+# Reviewed-by is innocuous and is still refused. That is the allowlist working:
+# the rule is "these three and nothing else", not a list of things to fear.
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file
 
-${TERM_TRAILER}: ${TERM_ASSISTANT} <noreply@example.invalid>"
+Reviewed-by: Someone Else <someone@example.invalid>'
 rc="$(run_hook "$d" "$base")"
-[ "$rc" != '0' ] && ok 'attribution trailer in message: rejected' \
-                 || bad 'attribution TRAILER was accepted'
+[ "$rc" != '0' ] && ok 'disallowed trailer key: rejected' "$rc" \
+                 || bad 'a trailer OUTSIDE the allowlist was accepted' "$rc"
 rm -rf "$d"
 
-# --- case 5: attribution string in the tree fails -----------------------------
-d="$(new_repo)"
-base="$(git -C "$d" rev-parse HEAD)"
-printf 'written by %s\n' "$TERM_VENDOR" > "$d/notes.txt"
-git -C "$d" add -- notes.txt
-git -C "$d" commit -q -m 'Add notes'
+# --- 5: Signed-off-by with the canonical identity is accepted -----------------
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" "Add a file
+
+Signed-off-by: ${CANON}"
 rc="$(run_hook "$d" "$base")"
-[ "$rc" != '0' ] && ok 'attribution string in tree: rejected' \
-                 || bad 'attribution string in the TREE was accepted'
+[ "$rc" = '0' ] && ok 'Signed-off-by, canonical identity: accepted' "$rc" \
+                || bad 'the permitted sign-off was REJECTED' "$rc"
 rm -rf "$d"
 
-# --- case 6: added then deleted inside one push range fails --------------------
-# The tip tree is clean. Only the intermediate commit is dirty, and that commit
-# would still be published. A hook that checked only the tip would pass this.
-d="$(new_repo)"
-base="$(git -C "$d" rev-parse HEAD)"
-printf 'written by %s\n' "$TERM_ASSISTANT" > "$d/oops.txt"
-git -C "$d" add -- oops.txt
-git -C "$d" commit -q -m 'Add a file that should not exist'
-git -C "$d" rm -q -- oops.txt
-git -C "$d" commit -q -m 'Remove it again'
-tip_clean=0
-tree_has_term "$d" HEAD || tip_clean=1
+# --- 6: Signed-off-by naming anyone else is rejected --------------------------
+# The key alone is not enough. A sign-off asserts who stands behind the commit,
+# so its value is checked as strictly as the author field.
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file
+
+Signed-off-by: Someone Else <someone@example.invalid>'
 rc="$(run_hook "$d" "$base")"
-if [ "$rc" != '0' ] && [ "$tip_clean" = '1' ]; then
-	ok 'forbidden term added then deleted in one range: rejected (tip tree was clean)'
-elif [ "$tip_clean" != '1' ]; then
-	bad 'case 6 is not testing what it claims: the tip tree still contains the term'
-else
-	bad 'added-then-deleted term was ACCEPTED -- only the tip is being checked'
-fi
+[ "$rc" != '0' ] && ok 'Signed-off-by, different identity: rejected' "$rc" \
+                 || bad 'a sign-off naming somebody else was accepted' "$rc"
 rm -rf "$d"
 
-printf '\n%d passed, %d failed\n' "$pass" "$fail"
+# --- 7: Verified takes free text ----------------------------------------------
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file
+
+Verified: 9/9 Synced and Healthy, zero pods outside Running/Completed.'
+rc="$(run_hook "$d" "$base")"
+[ "$rc" = '0' ] && ok 'Verified, free text: accepted' "$rc" \
+                || bad 'Verified was REJECTED -- published history carries it' "$rc"
+rm -rf "$d"
+
+# --- 8: Measured takes free text ----------------------------------------------
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file
+
+Measured: 0 with kubeconform, 0 without (2 skips), 1 with CI=1 and without.'
+rc="$(run_hook "$d" "$base")"
+[ "$rc" = '0' ] && ok 'Measured, free text: accepted' "$rc" \
+                || bad 'Measured was REJECTED -- published history carries it' "$rc"
+rm -rf "$d"
+
+# --- 9: an unlisted evidence key is rejected ----------------------------------
+# Tested reads exactly like Verified and Measured and is refused anyway, because
+# the allowlist is a list and not a vibe. This is the accepted cost of a tight
+# allowlist: the next evidence word needs a one-line change before it can land.
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file
+
+Tested: every case green on three Kubernetes versions.'
+rc="$(run_hook "$d" "$base")"
+[ "$rc" != '0' ] && ok 'unlisted evidence key (Tested): rejected' "$rc" \
+                 || bad 'an unlisted evidence key was accepted -- allowlist is not tight' "$rc"
+rm -rf "$d"
+
+# --- 10: a mid-message Key: Value line is not a trailer -----------------------
+# git parses only the LAST paragraph as trailers. The SAME word is prose here
+# and a trailer in case 7, which is the surprising part and the reason this
+# gate uses git's parser rather than a ^Key: regex.
+d="$(new_repo)"; base="$(git -C "$d" rev-parse HEAD)"
+commit_msg "$d" 'Add a file
+
+Verified: this line is not in the final paragraph.
+
+So it is prose, and this paragraph is what makes it so.'
+rc="$(run_hook "$d" "$base")"
+[ "$rc" = '0' ] && ok 'mid-message Key: Value, not a trailer: accepted' "$rc" \
+                || bad 'ordinary prose was treated as a trailer and REJECTED' "$rc"
+rm -rf "$d"
+
+# --- 11: an annotated tag with the wrong tagger is rejected -------------------
+d="$(new_repo)"
+GIT_COMMITTER_NAME='Some Service' GIT_COMMITTER_EMAIL='noreply@example.invalid' \
+	git -C "$d" tag -a v9.9.9 -m 'Release nine'
+rc="$(run_hook_tag "$d" 'v9.9.9')"
+[ "$rc" != '0' ] && ok 'annotated tag, wrong tagger: rejected' "$rc" \
+                 || bad 'a tag tagged by somebody else was accepted' "$rc"
+rm -rf "$d"
+
+# --- 12: a correct annotated tag is accepted ----------------------------------
+d="$(new_repo)"
+git -C "$d" tag -a v1.0.0 -m 'Release one'
+rc="$(run_hook_all "$d")"
+[ "$rc" = '0' ] && ok 'annotated tag, canonical tagger: accepted' "$rc" \
+                || bad 'a correctly tagged release was REJECTED' "$rc"
+rm -rf "$d"
+
+# --- 13: a disallowed trailer in a tag ANNOTATION is rejected -----------------
+# Without this, a tag is a place to put a trailer the commit gate refused.
+d="$(new_repo)"
+git -C "$d" tag -a v2.0.0 -m 'Release two
+
+Reviewed-by: Someone Else <someone@example.invalid>'
+rc="$(run_hook_all "$d")"
+[ "$rc" != '0' ] && ok 'disallowed trailer in a tag annotation: rejected' "$rc" \
+                 || bad 'a tag annotation carried a disallowed trailer' "$rc"
+rm -rf "$d"
+
+printf '\n%d as expected, %d unexpected\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
