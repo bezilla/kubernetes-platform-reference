@@ -84,12 +84,23 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | Environments rendered and guardrail-checked | **3 × 2 tenants, 21 assertions** |
 
 > **What has actually run, and where.** The captures above are real output from
-> this machine. The bring-up has been observed on Kubernetes 1.32 and 1.34
-> locally; **1.33 is a matrix target that has not run anywhere yet**, and no
-> cluster job has run in CI at all — the workflow is new. Numbers here without a
-> qualifier are from repeated local runs; the upgrade figure is a single one.
-> When CI has a run history these become checkable without trusting a picture,
-> and this note gets replaced by that history.
+> an 8-core machine. The bring-up has been observed on Kubernetes 1.32 and 1.34;
+> **1.33 is a matrix target that has not run yet**. Numbers without a qualifier
+> are from repeated local runs; the upgrade figure is a single one.
+>
+> **The three cluster jobs cannot run on GitHub's free runners, and that is a
+> fact about the runner.** `up.sh` refuses below `MIN_CPUS=4`. A free
+> `ubuntu-latest` runner gives Docker **2 CPUs** and 7938 MiB — memory is fine,
+> cores are not — so `bring-up · demo`, `upgrade in place` and anything else that
+> calls `make up` stop at the preflight with `up: Docker has 2 CPUs`. Larger
+> runners need a paid plan; a self-hosted runner on a public repository would
+> execute any fork's pull-request code on the owner's hardware, which is a worse
+> trade than a red badge.
+>
+> **What this means if you are running it: nothing.** `make up` works on any
+> machine that meets the floor, which is most laptops — it is measured above at
+> about five minutes on eight cores. The preflight is refusing a runner, not
+> failing a platform, and it names the number it refused on.
 
 ---
 
@@ -420,16 +431,23 @@ make policy-test    # every guardrail against fixtures, offline
 make demo-guardrails  # the same, through live admission control
 ```
 
-CI runs six jobs:
+CI defines six jobs. Three run on GitHub's free runners; three cannot, for the
+reason given above — they are kept because they are what a maintainer runs
+locally before pushing, and because they will run unchanged on any runner with
+four cores.
 
-| Job | What it does |
-|---|---|
-| `chart · manifests` | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
-| `guardrails` | the policy suite, both directions |
-| `identity` | the identity, attribution and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
-| `bring-up · demo` | the whole platform built and all five demos run, on a clean runner, with no sibling repository present. The matrix targets Kubernetes 1.32, 1.33 and 1.34 |
-| `upgrade in place` | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
-| `supply chain` | trivy over the tree and both built images, an SPDX SBOM kept per image |
+| Job | Runs on free CI | What it does |
+|---|---|---|
+| `chart · manifests` | yes | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
+| `guardrails` | yes | the policy suite, both directions |
+| `identity` | yes | the identity, attribution and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
+| `bring-up · demo` | **no — 2 cores** | the whole platform built and all five demos run, no sibling repository present. Matrix: Kubernetes 1.32, 1.33, 1.34 |
+| `upgrade in place` | **no — 2 cores** | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
+| `supply chain` | yes | trivy over the tree and both built images, an SPDX SBOM kept per image |
+
+The three marked *no* stop at `up.sh`'s preflight with `up: Docker has 2 CPUs`
+before doing any work. Locally, on hardware that meets the floor, they are the
+`make up`, `make demo` and `make upgrade-test` documented above.
 
 Every action is pinned by commit SHA. [Renovate](renovate.json5) watches the
 upstreams and writes a single dashboard issue — it opens no branches and no pull
