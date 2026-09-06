@@ -431,8 +431,9 @@ CI runs six jobs:
 | `upgrade in place` | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
 | `supply chain` | trivy over the tree and both built images, an SPDX SBOM kept per image |
 
-Every action is pinned by commit SHA. Dependabot moves the pins; the bring-up
-and upgrade jobs decide whether the move was safe.
+Every action is pinned by commit SHA. [Renovate](renovate.json5) watches the
+upstreams and writes a single dashboard issue — it opens no branches and no pull
+requests — and the bring-up and upgrade jobs decide whether a move was safe.
 
 ---
 

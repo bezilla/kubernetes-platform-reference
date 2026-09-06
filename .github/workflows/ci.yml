@@ -196,8 +196,8 @@ jobs:
 
   upgrade:
     # The other cluster job builds from nothing, which proves the platform can be
-    # created. This proves it can be moved -- which is what every Dependabot pull
-    # request actually asks for, and where CRD migrations and webhook downtime
+    # created. This proves it can be moved -- which is what every dependency bump
+    # actually asks for, and where CRD migrations and webhook downtime
     # show up. One version only: the upgrade path is orthogonal to the Kubernetes
     # version, and three of these would cost half an hour to learn the same thing.
     name: upgrade in place
@@ -292,8 +292,9 @@ jobs:
         # than implied: 35 fixable findings from a digest-pinned Alpine
         # (bootstrap/git-server/Dockerfile) and a tag-pinned nginx
         # (versions.env SAMPLE_IMAGE_FALLBACK). Move those two pins and the gate
-        # can be raised. Dependabot reaches the first; the second is a build
-        # argument it cannot read, and is bumped by hand.
+        # can be raised. Renovate watches both: the Dockerfile base directly,
+        # and the versions.env pin through a custom regex manager, because a
+        # build argument has no FROM line for a packaged manager to read.
         run: |
           set -euo pipefail
           source versions.env

@@ -78,13 +78,26 @@ version in an Application manifest ever disagree. The manifests cannot source a
 shell file, so each carries its version literally, and that duplication is
 exactly the kind that rots quietly.
 
-Keeping the pins current is [Dependabot](.github/dependabot.yml)'s job for the
-actions and for the digest-pinned Alpine base. Two things it cannot do, recorded
-here rather than left as a silent gap: `bootstrap/fallback-workload` takes its
-base as a build argument so `versions.env` stays the single source of truth,
-which means there is no `FROM` line to read; and the Helm chart versions are
-moved by hand, because moving a control-plane component should be a deliberate
-read of its changelog rather than a merge.
+Keeping the pins current is [Renovate](renovate.json5)'s job. It is configured
+with `dependencyDashboardApproval`, so it writes one dependency-dashboard issue
+and nothing else — no branches, no pull requests — until a checkbox is ticked.
+
+That is structural, not a preference. Opening a pull request creates
+`refs/pull/N/head`, which GitHub keeps permanently whether the pull request is
+merged, closed or deleted; the repository would have to be recreated to remove
+it. This repository's own pre-public gate counts `refs/pull` and expects zero.
+A bot that opens one makes that count permanently non-zero, and no merge mode
+here can produce the required identity anyway.
+
+So an update is hand-work either way: read the dashboard, apply the change
+locally, run `make check` and a bring-up, push through the hook.
+
+`versions.env` is a shell file that no packaged manager reads, so each pin in it
+carries a `# renovate:` annotation and a custom regex manager reads those. That
+covers the two pins nothing else could reach — the kind node image and the
+fallback workload's base, which is a build argument rather than a `FROM` line.
+The Helm chart versions are annotated too, but moving a control-plane component
+is still a deliberate read of its changelog rather than a tick.
 
 ## Commit messages
 

@@ -5,7 +5,7 @@
 #
 # Every other test here builds from nothing. That proves the platform can be
 # created; it does not prove it can be moved, and moving it is what every
-# Dependabot pull request asks for. The failures that only appear on an upgrade
+# dependency bump asks for. The failures that only appear on an upgrade
 # are the expensive ones: a CRD whose schema changed under existing objects, a
 # webhook that is unavailable during its own rollout and rejects everything
 # while it is, a chart that renames a resource so the old one is orphaned.

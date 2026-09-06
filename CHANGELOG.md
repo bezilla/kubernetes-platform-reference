@@ -44,8 +44,10 @@ Nothing yet.
   `make up` and `make demo` on a runner without the sibling workload repository,
   and a `supply-chain` job running trivy over the tree and both built images
   with an SPDX SBOM kept per image. Every action is pinned by commit SHA.
-- **Dependabot** for the actions and the digest-pinned Alpine base, because an
-  immutable pin never picks up a security release on its own.
+- **Renovate**, dashboard-only, for the actions, the container bases and every
+  pin in `versions.env` — because an immutable pin never picks up a security
+  release on its own, and a bot that opens a pull request writes a `refs/pull`
+  ref that cannot be removed.
 - **`make demo-telemetry`** — spans arriving at a collector the app team never
   named, proving the observability seam rather than asserting it.
 - **The pre-push gate**, with a self-test proving it rejects wrong authors,
