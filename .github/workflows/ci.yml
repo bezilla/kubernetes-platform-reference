@@ -306,7 +306,7 @@ jobs:
 
       - name: install trivy and syft
         run: |
-          trivy_version=0.58.2
+          trivy_version=0.74.0
           syft_version=1.19.0
           curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${trivy_version}/trivy_${trivy_version}_Linux-64bit.tar.gz" \
             | tar -xz -C /usr/local/bin trivy
