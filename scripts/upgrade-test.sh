@@ -42,7 +42,10 @@ running_versions() {
 
 # --- 1. build the old-version tree, off your branch ---------------------------
 step "Building a commit pinned to the previous chart versions"
-tmp_index="$(mktemp -t upgrade-index)"
+# See the note in scripts/demo-gitops.sh: `mktemp -t NAME` is a BSD prefix and a
+# GNU template, and GNU rejects it for having too few X's. This form works on
+# both.
+tmp_index="$(mktemp "${TMPDIR:-/tmp}/upgrade-index.XXXXXX")"
 GIT_INDEX_FILE="$tmp_index" git read-tree HEAD
 for pair in "${PAIRS[@]}"; do
 	IFS=':' read -r manifest curvar prevvar <<<"$pair"

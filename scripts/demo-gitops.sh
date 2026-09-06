@@ -50,7 +50,12 @@ printf '\n\033[1mBuilding the commit (off your branch)\033[0m\n'
 # A temporary index so the real one is never written. read-tree loads HEAD into
 # it, update-index swaps in the one changed blob, write-tree turns it back into
 # a tree object. None of this consults or modifies the working tree.
-tmp_index="$(mktemp -t demo-gitops-index)"
+# Not `mktemp -t NAME`. BSD mktemp reads -t's argument as a PREFIX and appends
+# its own suffix, so that form works on macOS; GNU mktemp reads it as a TEMPLATE
+# and requires at least three trailing X's, so the same line is
+# "mktemp: too few X's in template" on every Linux runner. An explicit template
+# path is accepted by both, and is the form the rest of this repository uses.
+tmp_index="$(mktemp "${TMPDIR:-/tmp}/demo-gitops-index.XXXXXX")"
 cleanup_index() { rm -f "$tmp_index"; cleanup; }
 trap cleanup_index EXIT
 
