@@ -23,7 +23,12 @@ FROM ${BASE}
 # nginx welcome page and nothing else.
 COPY quote-api.conf /etc/nginx/conf.d/default.conf
 
-# Declared for the reader; the chart is what actually publishes them. The base
-# image already runs as UID 101, and nothing here changes that -- the
-# require-probes-and-nonroot guardrail rejects the pod otherwise.
+# Declared for the reader; the chart is what actually publishes them.
 EXPOSE 8080 8081
+
+# The base image already runs as UID 101 and nothing here changes that, so this
+# line changes no behaviour. It is here because "the base happens to set it" is
+# invisible to anything reading this file -- including a static scanner, which
+# reports an image with no USER instruction as running as root. Stating it makes
+# the guarantee local and checkable instead of inherited and assumed.
+USER 101

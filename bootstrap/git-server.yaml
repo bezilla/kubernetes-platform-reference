@@ -103,6 +103,18 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: git-server, app.kubernetes.io/part-of: platform}
     spec:
+      # Pod level as well as container level. The container below already sets
+      # all of this, so nothing about how this pod runs changes -- but a default
+      # pod security context is what any container added later inherits, and
+      # "the one container happens to set it" is a property of today's manifest
+      # rather than of the workload. The platform demands non-root of every
+      # tenant; its own bootstrap should not be the exception.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: lighttpd
           image: platform.local/git-server:0.1.0

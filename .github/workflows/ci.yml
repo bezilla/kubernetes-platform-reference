@@ -170,10 +170,18 @@ jobs:
           syft --version
 
       - name: scan the tree for misconfiguration and secrets
-        # Secrets are a hard failure: the pre-push gate already refuses them, and
-        # a second opinion that only warns is not a second opinion.
+        # Both hard failures. The pre-push gate already refuses secrets, and a
+        # second opinion that only warns is not a second opinion.
+        #
+        # tests/ is skipped, and only tests/. Six of the files under it are
+        # Deployments that break exactly one guardrail each -- they exist to be
+        # rejected, `make policy-test` asserts that they are, and a scanner
+        # reporting them as insecure is agreeing with the fixture rather than
+        # finding anything. Skipping the directory keeps that agreement from
+        # drowning a real finding somewhere else. Everything the platform
+        # actually deploys is scanned.
         run: |
-          trivy config --exit-code 1 --severity HIGH,CRITICAL .
+          trivy config --exit-code 1 --severity HIGH,CRITICAL --skip-dirs tests .
           trivy fs --scanners secret --exit-code 1 .
 
       - name: build the two images this repository ships
