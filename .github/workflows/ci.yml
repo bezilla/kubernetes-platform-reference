@@ -38,7 +38,7 @@ jobs:
       - name: install kubeconform
         run: |
           version=0.8.0
-          curl -sSL "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz" \
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz" \
             | tar -xz -C /usr/local/bin kubeconform
           kubeconform -v
       - name: prove recipes run with errexit and pipefail
@@ -72,7 +72,7 @@ jobs:
           # a mismatch shows up as every rule silently "Excluded" rather than as
           # an error.
           version=1.19.0
-          curl -sSL "https://github.com/kyverno/kyverno/releases/download/v${version}/kyverno-cli_v${version}_linux_x86_64.tar.gz" \
+          curl -fsSL "https://github.com/kyverno/kyverno/releases/download/v${version}/kyverno-cli_v${version}_linux_x86_64.tar.gz" \
             | tar -xz -C /usr/local/bin kyverno
           kyverno version
       - name: every policy, both directions
@@ -96,7 +96,7 @@ jobs:
       - name: install gitleaks
         run: |
           version=8.24.0
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
             | tar -xz -C /usr/local/bin gitleaks
           gitleaks version
       - name: identity and attribution over all history
@@ -182,7 +182,7 @@ jobs:
       - name: install gitleaks, which make init requires
         run: |
           source versions.env
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${CI_GITLEAKS_VERSION}/gitleaks_${CI_GITLEAKS_VERSION}_linux_x64.tar.gz" \
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${CI_GITLEAKS_VERSION}/gitleaks_${CI_GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz -C /usr/local/bin gitleaks
           gitleaks version
 
@@ -308,9 +308,9 @@ jobs:
         run: |
           trivy_version=0.58.2
           syft_version=1.19.0
-          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${trivy_version}/trivy_${trivy_version}_Linux-64bit.tar.gz" \
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${trivy_version}/trivy_${trivy_version}_Linux-64bit.tar.gz" \
             | tar -xz -C /usr/local/bin trivy
-          curl -sSL "https://github.com/anchore/syft/releases/download/v${syft_version}/syft_${syft_version}_linux_amd64.tar.gz" \
+          curl -fsSL "https://github.com/anchore/syft/releases/download/v${syft_version}/syft_${syft_version}_linux_amd64.tar.gz" \
             | tar -xz -C /usr/local/bin syft
           trivy --version
           syft --version
