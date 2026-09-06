@@ -76,6 +76,14 @@ PF_PORT="${ADMIN_PF_PORT:-8082}"
 # whole run, so a sweep reusing that local port would collide with it and report
 # a harness error on every pod.
 PF_POD_PORT="${ADMIN_PF_POD_PORT:-$((PF_PORT + 1))}"
+# A guaranteed collision, and worth refusing by name: the deployment-level
+# forward holds PF_PORT for the whole run, so an equal PF_POD_PORT could only
+# ever read that one pod while labelling it as each replica in turn.
+[ "$PF_POD_PORT" != "$PF_PORT" ] || {
+	printf '\ndemo-isolation: cannot run -- ADMIN_PF_POD_PORT (%s) must differ from ADMIN_PF_PORT (%s)\n' \
+		"$PF_POD_PORT" "$PF_PORT" >&2
+	exit 2
+}
 
 # Ceilings. Every wait in this script has one; none of them poll forever.
 PF_DEADLINE=30          # for the port-forward to start answering
@@ -118,6 +126,10 @@ harness() {
 }
 
 PF_LOG="$(mktemp "${TMPDIR:-/tmp}/demo-isolation-pf.XXXXXX")"
+# pod_admin_state runs inside a command substitution, so the pid of the forward
+# it starts is set in a SUBSHELL and never reaches the trap below. A file
+# crosses that boundary; a variable does not.
+POD_PF_PIDFILE="$(mktemp "${TMPDIR:-/tmp}/demo-isolation-podpid.XXXXXX")"
 BODY="$(mktemp "${TMPDIR:-/tmp}/demo-isolation-body.XXXXXX")"
 pf_pid=''
 pod_pf_pid=''
@@ -135,12 +147,13 @@ cleanup() {
 	# The sweep's per-pod forward. Short-lived in the normal path -- started and
 	# killed inside pod_admin_state -- but a Ctrl-C lands between those two, and
 	# a leaked forward holds PF_POD_PORT open against the next run.
-	if [ -n "$pod_pf_pid" ]; then
-		kill "$pod_pf_pid" 2>/dev/null || true
-		wait "$pod_pf_pid" 2>/dev/null || true
-		pod_pf_pid=''
+	local stray
+	stray="$(cat "$POD_PF_PIDFILE" 2>/dev/null || true)"
+	if [ -n "$stray" ]; then
+		kill "$stray" 2>/dev/null || true
+		wait "$stray" 2>/dev/null || true
 	fi
-	rm -f "$PF_LOG" "$BODY" 2>/dev/null || true
+	rm -f "$PF_LOG" "$BODY" "$POD_PF_PIDFILE" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
@@ -196,6 +209,30 @@ service_pods() {
 		| awk '$2 == "true" { print $1 }' | sort -u
 }
 
+# Wait until OUR port-forward actually owns the local port, before trusting
+# anything that answers on it.
+#
+# Without this the read races, and it races into a false PASS. If the forward
+# fails to bind -- most often because something else already holds that local
+# port -- the process exits, but a curl issued in the window before it does is
+# answered by WHATEVER does hold the port. The sweep then records some other
+# pod's state under this pod's name, and reports "unchanged" across replicas it
+# never actually read. That is the same defect this assertion exists to catch,
+# one level down, so it fails closed: no confirmed bind, no reading, E_HARNESS.
+#
+# Confirmed by kubectl's own "Forwarding from" line rather than by probing the
+# port, because a successful probe is exactly what a collision also produces.
+pf_bound() {
+	local log="$1" pid="$2" start=$SECONDS
+	while :; do
+		grep -q 'Forwarding from' "$log" 2>/dev/null && return 0
+		grep -qi 'address already in use\|unable to listen\|error forwarding' "$log" 2>/dev/null && return 1
+		kill -0 "$pid" 2>/dev/null || return 1
+		[ $((SECONDS - start)) -ge "$PF_DEADLINE" ] && return 1
+		sleep 1
+	done
+}
+
 # GET the injector on ONE named pod, through a port-forward of its own. Echoes
 # the canonical (jq -S -c) JSON and returns 0; returns 1 with no output if that
 # pod could not be read.
@@ -210,7 +247,17 @@ pod_admin_state() {
 	log="$(mktemp "${TMPDIR:-/tmp}/demo-isolation-podpf.XXXXXX")"
 	kubectl -n "$NS" port-forward "pod/${pod}" "${PF_POD_PORT}:${ADMIN_PORT}" >"$log" 2>&1 &
 	pod_pf_pid=$!
+	printf '%s' "$pod_pf_pid" > "$POD_PF_PIDFILE"
 	state=''
+	if ! pf_bound "$log" "$pod_pf_pid"; then
+		kill "$pod_pf_pid" 2>/dev/null || true
+		wait "$pod_pf_pid" 2>/dev/null || true
+		pod_pf_pid=''
+		: > "$POD_PF_PIDFILE"
+		cat "$log" >> "$PF_LOG" 2>/dev/null || true
+		rm -f "$body" "$log" 2>/dev/null || true
+		return 1
+	fi
 	start=$SECONDS
 	while :; do
 		kill -0 "$pod_pf_pid" 2>/dev/null || break
@@ -226,6 +273,7 @@ pod_admin_state() {
 	kill "$pod_pf_pid" 2>/dev/null || true
 	wait "$pod_pf_pid" 2>/dev/null || true
 	pod_pf_pid=''
+	: > "$POD_PF_PIDFILE"
 	cat "$log" >> "$PF_LOG" 2>/dev/null || true
 	rm -f "$body" "$log" 2>/dev/null || true
 	[ -n "$state" ] || return 1
@@ -239,6 +287,15 @@ pod_admin_post() {
 	log="$(mktemp "${TMPDIR:-/tmp}/demo-isolation-podpf.XXXXXX")"
 	kubectl -n "$NS" port-forward "pod/${pod}" "${PF_POD_PORT}:${ADMIN_PORT}" >"$log" 2>&1 &
 	pod_pf_pid=$!
+	printf '%s' "$pod_pf_pid" > "$POD_PF_PIDFILE"
+	if ! pf_bound "$log" "$pod_pf_pid"; then
+		kill "$pod_pf_pid" 2>/dev/null || true
+		wait "$pod_pf_pid" 2>/dev/null || true
+		pod_pf_pid=''
+		: > "$POD_PF_PIDFILE"
+		rm -f "$log" 2>/dev/null || true
+		return 1
+	fi
 	start=$SECONDS
 	while :; do
 		kill -0 "$pod_pf_pid" 2>/dev/null || break
@@ -254,25 +311,32 @@ pod_admin_post() {
 	kill "$pod_pf_pid" 2>/dev/null || true
 	wait "$pod_pf_pid" 2>/dev/null || true
 	pod_pf_pid=''
+	: > "$POD_PF_PIDFILE"
 	rm -f "$log" 2>/dev/null || true
 	[ -n "$done_" ]
 }
 
-# Reads every pod in $POD_LIST, emitting one "<pod><TAB><json>" line each.
-# Sets UNREACHABLE_POD and returns 1 the moment one cannot be read.
+# Reads every pod in $POD_LIST, writing one "<pod><TAB><json>" line per pod to
+# the file named in $1. Sets UNREACHABLE_POD and returns 1 the moment one cannot
+# be read.
+#
+# Writes to a file rather than to stdout so the caller can invoke it directly.
+# Called as "$(sweep_admin_state)" it would run in a subshell, and UNREACHABLE_POD
+# -- the whole diagnostic value of the failure -- would be set on a copy of the
+# shell that exits a microsecond later, leaving the harness message naming no pod
+# at all.
 UNREACHABLE_POD=''
 sweep_admin_state() {
-	local pod state out=''
+	local out="$1" pod state
 	UNREACHABLE_POD=''
+	: > "$out"
 	for pod in $POD_LIST; do
 		if ! state="$(pod_admin_state "$pod")"; then
 			UNREACHABLE_POD="$pod"
 			return 1
 		fi
-		out="${out}${pod}	${state}
-"
+		printf '%s\t%s\n' "$pod" "$state" >> "$out"
 	done
-	printf '%s' "$out"
 }
 
 # The state recorded for one pod in a sweep's output.
@@ -504,8 +568,10 @@ POD_LIST="$(service_pods)"
 [ -n "$POD_LIST" ] || harness "the ${SVC} Service has no ready endpoints, so there is nothing to read the injector on"
 pod_count="$(printf '%s\n' "$POD_LIST" | grep -c .)"
 
-before_all="$(sweep_admin_state)" || harness \
+SWEEP_FILE="$(mktemp "${TMPDIR:-/tmp}/demo-isolation-sweep.XXXXXX")"
+sweep_admin_state "$SWEEP_FILE" || harness \
 	"could not read the injector on pod ${UNREACHABLE_POD}. Every replica has to be readable before 'unchanged' can mean anything."
+before_all="$(cat "$SWEEP_FILE")"
 
 printf '        %s replica(s) behind %s; reading the injector on each\n' "$pod_count" "$SVC"
 
@@ -530,8 +596,10 @@ case "$post_code" in
 	*)   bad "POST /admin/inject -> ${post_code}, want 404 or no connection" ;;
 esac
 
-after_all="$(sweep_admin_state)" || harness \
+sweep_admin_state "$SWEEP_FILE" || harness \
 	"the injector on pod ${UNREACHABLE_POD} stopped answering before its state could be re-read"
+after_all="$(cat "$SWEEP_FILE")"
+rm -f "$SWEEP_FILE" 2>/dev/null || true
 
 changed_pods=''
 while IFS= read -r line; do
