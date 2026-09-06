@@ -376,11 +376,12 @@ jobs:
           source versions.env
           for image in "${GIT_SERVER_IMAGE_REPO}:${GIT_SERVER_IMAGE_TAG}" \
                        "${SAMPLE_IMAGE_REPO}:${SAMPLE_IMAGE_TAG}"; do
-            echo "### $image" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            trivy image --severity HIGH,CRITICAL --format table "$image" \
-              2>&1 | tail -40 >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### $image"
+              echo '```'
+              trivy image --severity HIGH,CRITICAL --format table "$image" 2>&1 | tail -40
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           done
 
       - name: write an SBOM for each image
