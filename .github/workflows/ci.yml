@@ -12,6 +12,11 @@ on:
     branches: [main]
   pull_request:
 
+# Read at the top, and restated on every job below. The top-level default alone
+# would be enough today; restating it means a job added later inherits nothing by
+# accident, and any job that ever needs more has to say so on its own line where
+# a reviewer will see it. No job here needs more than read -- artifact upload
+# goes through the Actions API, not contents.
 permissions:
   contents: read
 
@@ -19,6 +24,8 @@ jobs:
   lint:
     name: chart · manifests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
@@ -54,6 +61,8 @@ jobs:
   policy:
     name: guardrails
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: install the kyverno CLI
@@ -76,6 +85,8 @@ jobs:
   identity:
     name: identity
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -103,6 +114,8 @@ jobs:
     # strictly less useful than knowing about both.
     name: bring-up · demo · k8s ${{ matrix.k8s.version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -189,6 +202,8 @@ jobs:
     # version, and three of these would cost half an hour to learn the same thing.
     name: upgrade in place
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -218,6 +233,8 @@ jobs:
   supply-chain:
     name: supply chain
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
