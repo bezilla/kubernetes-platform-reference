@@ -46,3 +46,13 @@ env:
   API_ADDR: ":8080"
   PRICING_ADDR: ":8081"
   PRICING_URL: "http://localhost:8081"
+  # The fault injector's own listener. Pinned here rather than left to the
+  # image's built-in default, and deliberately NOT in extraContainerPorts:
+  # nothing may publish it, which is the whole isolation property.
+  #
+  # Pinned because scripts/demo-isolation.sh has to know this number, and until
+  # now it hardcoded its own copy while the container fell back to the default
+  # in the sibling's cmd/service/main.go. Two independent 8082s that agreed by
+  # coincidence, not by reference. This is the reference: the test reads the
+  # value from the running Deployment, so the two cannot drift apart in silence.
+  ADMIN_ADDR: ":8082"

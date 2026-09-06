@@ -51,22 +51,23 @@ CA=.work/platform-ca.crt
 # charts/paved-road/templates/service.yaml, which is the whole security
 # property; if this ever appears in a Service, this test is why it must not.
 #
-# UNVERIFIED, AND THE MORE LIKELY OF THE TWO TO BITE. This number is hardcoded
-# here while the deployment does not set it anywhere: apps/quote-api/values.yaml
-# writes no ADMIN_ADDR, so the container falls back to the `:8082` default in
-# the sibling repository's cmd/service/main.go. Two independent 8082s that agree
-# by coincidence, not by reference -- and nothing in this repository would notice
-# them diverging.
+# THE COINCIDENCE IS CLOSED. This used to be a hardcoded 8082 sitting next to a
+# deployment that pinned nothing, so the container fell back to the `:8082`
+# default in the sibling repository's cmd/service/main.go. Two independent 8082s
+# that agreed by coincidence rather than by reference, with nothing in this
+# repository able to notice them diverging: change the sibling's default, or pin
+# ADMIN_ADDR to something else, and this constant went stale in silence while the
+# open half of the test quietly stopped testing the injector.
 #
-# So if anyone later pins ADMIN_ADDR in values.yaml to something else, or the
-# sibling changes its default, this constant goes stale silently and the open
-# half of the test stops testing the injector. It fails safe -- the port-forward
-# answers nothing and the script exits 3, "could not finish" -- but exit 3 does
-# not say "your constant is wrong", so read this first when it appears.
+# apps/quote-api/values.yaml now pins ADMIN_ADDR, and this reads that value off
+# the running Deployment rather than restating it. There is one number and one
+# place it is written; the test asks the cluster what it is.
 #
-# Not fixed by editing values.yaml. Pinning it there is a real option and a
-# separate decision; a test is not the place to make it on someone's behalf.
-ADMIN_PORT=8082
+# Read after the fallback check below, not here, because the read is only
+# meaningful for a workload that has an injector at all. If it cannot be read
+# the script exits 3 -- "could not finish" -- and says which field was missing,
+# which is what the old failure could not do.
+ADMIN_PORT=''
 # The local end of the port-forward. Overridable because 8082 is a popular
 # number on a developer's machine and a collision here is a broken test run,
 # not a finding.
@@ -456,6 +457,21 @@ esac
 # The other half. If this fails the test is worthless in the reassuring
 # direction: an injector that answers nowhere would pass every assertion in
 # step 2 while telling you nothing about routing.
+
+# The injector's port, from the Deployment that is actually running. Not a
+# constant in this file: see the ADMIN_PORT note at the top for what that cost.
+admin_addr="$(kubectl -n "$NS" get deploy "$DEPLOY" \
+	-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ADMIN_ADDR")].value}' \
+	--request-timeout=20s 2>/dev/null)"
+case "$admin_addr" in
+	'')     harness "the ${DEPLOY} Deployment sets no ADMIN_ADDR. Pin it in apps/quote-api/values.yaml -- this test reads it rather than assuming a port." ;;
+	*:*)    ADMIN_PORT="${admin_addr##*:}" ;;
+	*)      harness "ADMIN_ADDR on the ${DEPLOY} Deployment is '${admin_addr}', which has no :port to read" ;;
+esac
+case "$ADMIN_PORT" in
+	''|*[!0-9]*) harness "ADMIN_ADDR '${admin_addr}' does not end in a numeric port" ;;
+esac
+printf '\n        injector port read from the Deployment: ADMIN_ADDR=%s -> %s\n' "$admin_addr" "$ADMIN_PORT"
 
 step "The open path: port-forward ${PF_PORT} -> ${DEPLOY}:${ADMIN_PORT}"
 
