@@ -5,126 +5,129 @@
 ![Kubernetes 1.34](https://img.shields.io/badge/Kubernetes-1.34-326ce5)
 ![Argo CD 3.5](https://img.shields.io/badge/Argo%20CD-3.5-ef7b4d)
 ![Gateway API](https://img.shields.io/badge/Gateway%20API-not%20Ingress-7241d6)
+![Kyverno](https://img.shields.io/badge/Kyverno-Enforce-2ea44f)
 
-The paved-road layer other engineers deploy on: one reconciler, one authored
-Helm chart as the interface, and four guardrails that refuse anything that
-misses the road. `make up` builds all of it on a local kind cluster and does not
-return until every component is green.
+A production-shaped Kubernetes platform — **Argo CD** app-of-apps GitOps, a
+**Gateway API** edge with **cert-manager** TLS, four **Kyverno** guardrails in
+`Enforce`, and an **OpenTelemetry** collector every workload reaches without
+configuring it — built so an app team writes one twenty-line values file and
+gets a routable, policy-compliant, observable service. No Deployment, no
+Certificate, no HTTPRoute, no security context, no resource arithmetic.
 
-It is written for two readers. **If you are an app team**, the only section you
-need is [how an app team deploys](#how-an-app-team-deploys) — twenty lines of
-YAML and you are on the internet with TLS. **If you are the platform engineer
-who maintains this**, everything after that is how it is built and why.
+It is meant to be read as much as run: the non-obvious choices are written down
+in [DESIGN.md](DESIGN.md), along with every defect that changed how it is
+tested. `make up` builds the whole thing on a local kind cluster in about five
+minutes and does not return until all nine Applications are Synced and Healthy.
+
+Aimed at platform engineers evaluating a paved-road layout, and at anyone who
+wants a worked example rather than a tutorial.
+
+## Architecture
+
+![The Argo CD app-of-apps tree: one root Application applied by hand, eight children it produces in sync-wave order, and what a tenant receives from them](docs/images/app-of-apps.svg)
+
+*One reconciler and one hand-applied Application. `platform-root` produces the
+other eight in sync-wave order — four from upstream Helm charts, four from paths
+in this repository. Adding a platform component is a file in
+`platform/applications/` and a commit, never `helm install`.*
+
+Only two things are installed imperatively, and both for the same reason:
+Argo CD, because a reconciler cannot reconcile itself into existence, and a Git
+server, because Argo CD needs something to reconcile *from*. Everything after
+that is a commit.
+
+### What each Application provisions
+
+| Application | Source | Provisions |
+|---|---|---|
+| **argocd-repositories** | this repo · `platform/config/argocd` | The OCI repository registration Argo CD needs before an Application may name a chart there |
+| **cert-manager** | Helm · jetstack `v1.21.1` | Every certificate on the cluster, issued and renewed. No team ever sees a CSR |
+| **envoy-gateway** | Helm · OCI envoyproxy `v1.9.1` | The Gateway API implementation — the only place Envoy is named |
+| **kyverno** | Helm · kyverno.github.io `3.9.0` | The admission webhook the guardrails run inside |
+| **platform-config** | this repo · `platform/config/edge` | Namespaces, the root CA, the shared Gateway, the NodePort that publishes it |
+| **guardrails** | this repo · `platform/config/guardrails` | Four `ClusterPolicy` objects in `Enforce`, scoped to tenant namespaces |
+| **otel-collector** | Helm · open-telemetry `0.172.0` | The OTLP endpoint every workload is wired to without asking |
+| **quote-api** | this repo · `charts/paved-road` | One tenant on the paved road, from a twenty-line values file |
+| **platform-root** | this repo · `platform/applications` | The app-of-apps root — the only `kubectl apply` in the bring-up |
+
+Every version above is pinned in [`versions.env`](versions.env). The manifests
+cannot source a shell file, so each carries its version literally —
+`make check-versions` fails if the two ever disagree, and it runs in CI.
 
 ---
 
-## The result
+## It works, and here is the evidence
 
-Nine Applications. One of them — `platform-root` — is the only thing applied by
-hand; it produces the other eight. Adding a platform component means adding a
-file to `platform/applications/` and committing, never `helm install`.
+| | |
+|---|---|
+| `make up` to nine Applications Synced and Healthy | **~5 minutes** on 8 cores / 11946 MiB |
+| Eight platform components, installed one at a time | **171s** total |
+| `kube-controller-manager` / `kube-scheduler` restarts | **0** |
+| Offline policy suite | **42 tests, 42 evaluated, 0 excluded** |
+| Live admission demo | **6 violations refused, 1 compliant deploy admitted** |
+| Telemetry proof | **190 spans** from a workload whose team configured none |
 
 ![make up: eight components installed one at a time, then nine Applications Synced and Healthy](docs/images/make-up.svg)
 
 One component at a time, each blocking until it is genuinely Synced *and*
 Healthy before the next is created. Argo CD's sync waves do not do this on their
 own — they order when a child Application **object** is created, not when its
-contents finish syncing — and the difference is the whole of
-[DESIGN.md § sync waves](DESIGN.md#what-the-sync-waves-actually-do).
+contents finish syncing. That distinction cost a bring-up, and it is
+[written up in DESIGN.md](DESIGN.md#what-the-sync-waves-actually-do).
 
 ![make demo-guardrails: six violations refused at admission, the compliant deploy admitted](docs/images/guardrails.svg)
 
-Six violations refused at admission, each naming the rule that caught it, and
-the same Deployment with nothing broken admitted. Both directions, because a
-policy that matches everything and a policy that matches nothing look identical
-if you only check one.
+Six violations refused at admission, each naming the rule that caught it — and
+the same Deployment with nothing broken admitted. Both directions, always,
+because a policy that matches everything and a policy that matches nothing look
+identical if you only check one.
 
 ![make demo-telemetry: 190 spans arriving at a collector the app team never named](docs/images/telemetry.svg)
 
 The payments team's values file names no endpoint, no exporter and no collector.
 The spans arrive anyway.
 
-> Every capture above is real output from one `make up` on an 8-core M1 Pro,
-> not a mock-up. CI runs the same bring-up and the same demos on a clean runner
-> with no sibling checkout, so the claim is checkable without trusting the
-> picture.
+> Every capture is real output from one run on an 8-core M1 Pro. **CI runs the
+> same bring-up and the same four demos on a clean runner**, without the sibling
+> workload repository, so none of this depends on trusting a picture.
 
 ---
 
-## Quickstart
+## The decisions, and the bugs that changed them
 
-**Prerequisites**
+The most useful file here is [DESIGN.md](DESIGN.md). It records what was
+rejected and why, and every defect that changed how this repository is tested —
+including the ones that make the author look bad, because those are the ones
+worth reading.
 
-| | |
-|---|---|
-| Docker | 4 CPUs and 5120 MiB minimum, 8 CPUs and 8192 MiB recommended. **Not the containerd image store** — see below. |
-| [kind](https://kind.sigs.k8s.io) | creates the cluster |
-| kubectl, [helm](https://helm.sh), git | |
-| [gitleaks](https://github.com/gitleaks/gitleaks) | only for `make init`; the pre-push gate fails closed without it |
-| [kubeconform](https://github.com/yannh/kubeconform) | only for `make lint`, which skips manifest validation with a count when it is absent rather than failing |
-| [kyverno CLI](https://github.com/kyverno/kyverno) | only for `make policy-test`, which fails closed without it — a policy suite that quietly does not run is how a policy matching everything reaches production |
+**A guardrail in `Enforce` that admitted every `:latest` image for a day.** The
+pattern used a `|` alternation operator Kyverno does not have, so the whole
+string parsed as one literal wildcard matching everything. Reading the YAML
+produced the bug. Deploying a `:latest` image found it in seconds. That is why
+both guardrail suites now assert that compliant resources *pass* as well as that
+violations fail.
 
-> **Turn off Docker's containerd image store.** Docker Desktop enables it by
-> default and reports its driver as `overlayfs` rather than `overlay2`. Under
-> it, a pulled multi-architecture image is stored as an index whose other
-> platforms are referenced but never fetched, and `kind load docker-image` —
-> which imports with `--all-platforms` — fails on the missing blob with
-> `ctr: content digest sha256:...: not found`. It fails minutes in, only for
-> images that were pulled rather than built, so it reads as a kind bug and is
-> not one. Settings → General → uncheck *Use containerd for pulling and storing
-> images*, restart Docker, and confirm `docker system info --format
-> '{{.Driver}}'` says `overlay2`. `make up` refuses to start otherwise.
->
-> **Give Docker CPU, but do not max its memory.** Cores are what this platform
-> runs out of first. Memory is the one people over-allocate: Docker Desktop
-> defaults to half of physical RAM, so a 16 GiB machine hands it about 7934 MiB
-> — under the recommended figure — while setting the slider to the full 16 GiB
-> leaves macOS nothing and gets the kind container evicted mid-run. On 16 GiB,
-> 12288 MiB is a good setting; Docker reports back 200–350 MiB less than the
-> slider, so verify with `docker system info` rather than trusting the dialog.
-> `make up` checks both CPU and memory, in MiB, before it starts.
->
-> **Close other kind clusters first.** Five kind nodes on eight cores starved
-> this control plane into a TLS handshake timeout. `make up` warns if it finds
-> others running.
+**A policy suite that reported 42 passing tests while evaluating nothing.**
+Every result was marked `Excluded`: the policies are scoped by
+`namespaceSelector`, and offline there was no cluster to read namespace labels
+from. A suite that cannot run its own rules is the same false confidence as the
+bug it was written to catch, wearing a greener colour.
 
-```bash
-git clone https://github.com/bezilla/kubernetes-platform-reference
-cd kubernetes-platform-reference
+**Sync waves that looked like ordering and were not.** Waves stagger when child
+Application *objects* are created. They do not stop five Helm charts unpacking
+at once, which drove an 8-core node to ~1900% CPU until `etcd` read latency went
+from 100ms to 1.5s and both the controller manager and the scheduler lost leader
+election. The fix was to serialize outside Argo CD and block on each component.
 
-make init     # points core.hooksPath at .githooks
-make up       # ~5 minutes on 8 cores; ~17 on a constrained machine
-```
+**A history scan that returned zero because it never ran.** `git grep` does not
+use the system regex engine: given a pattern it cannot honour it matches
+nothing, prints nothing, and exits 0. It was caught only because an email sweep
+reported zero against history while the same regex found ten in the checkout.
+Every gate here now calibrates its scanner against a known-positive *and* a
+known-negative before trusting a result.
 
-`make up` creates the cluster, installs Argo CD, starts an in-cluster Git
-server, builds the sample image, publishes this repository to that server,
-installs the eight platform components **one at a time**, applies the
-app-of-apps root, and then **blocks until every Application is Synced and
-Healthy**, exiting non-zero if anything is not. It prints a status table when it
-finishes.
-
-Installing one component at a time is deliberate and is not what Argo CD's sync
-waves do on their own — see [DESIGN.md](DESIGN.md#what-the-sync-waves-actually-do).
-
-**Argo CD does not read GitHub.** It reads an in-cluster Git server that
-`make publish` mirrors this working tree into. The Applications pin
-`targetRevision: main`, so the mirror publishes your checked-out branch under
-**`refs/heads/main` on that in-cluster mirror only** — nothing is pushed to
-GitHub, and your branch is not renamed. It is what lets the platform be brought
-up from a topic branch rather than only from `main`.
-
-```bash
-make demo     # the four things that prove it works
-make status   # applications, edge, guardrails, workloads
-make argo     # the Argo CD UI, with the admin password
-make down     # delete the cluster and .work/
-```
-
-**Trusting the certificate.** The platform creates its own CA at install time.
-`make demo-https` writes it to `.work/platform-ca.crt` and verifies against it
-with `curl --cacert`. To use a browser, import that file. It is generated per
-cluster and is worthless anywhere else — but do not add it to a system trust
-store and forget about it.
+The thread running through all four: **a zero is not evidence.** It is either an
+absence or a broken instrument, and those look identical in a terminal.
 
 ---
 
@@ -186,8 +189,7 @@ and using it is meant to be a conversation rather than a default.
 
 ### If you get rejected
 
-Admission control will refuse a deploy that misses the road, and it names the
-rule:
+Admission control refuses a deploy that misses the road, and it names the rule:
 
 ```
 resource Deployment/tenant-quotes/quote-api was blocked due to the following policies
@@ -199,8 +201,8 @@ require-resource-limits:
 ```
 
 Everything the chart renders already passes all four guardrails. If you are
-seeing one of these, you are writing raw YAML — which is allowed, and is
-exactly when the backstop is meant to fire.
+seeing one of these, you are writing raw YAML — which is allowed, and is exactly
+when the backstop is meant to fire.
 
 ---
 
@@ -208,12 +210,9 @@ exactly when the backstop is meant to fire.
 
 ![Architecture: Git to running workload, and the seam between the platform team and the app team](docs/images/platform-architecture.svg)
 
-**One reconciler.** Argo CD, app-of-apps. Only two things are installed
-imperatively: Argo CD, because a reconciler cannot reconcile itself into
-existence, and a Git server, because Argo CD needs something to reconcile from.
-Everything else is an Application in `platform/applications/`. DESIGN.md sets
-out why this is not split into Flux-for-platform and Argo-for-apps, what that
-split buys, and the write-loop failure mode of two engines over overlapping
+**One reconciler.** Argo CD, app-of-apps. DESIGN.md sets out why this is not
+split into Flux-for-platform and Argo-for-apps, what that split genuinely buys,
+and the write-loop failure mode of two level-triggered engines over overlapping
 manifests.
 
 **Gateway API, not Ingress.** The platform owns `GatewayClass` and `Gateway`;
@@ -232,7 +231,7 @@ the platform's own upstream charts.
 
 | Layout | |
 |---|---|
-| `bootstrap/` | the two imperative installs, and the app-of-apps root |
+| `bootstrap/` | the two imperative installs, the app-of-apps root, the fallback workload |
 | `platform/applications/` | one Argo Application per component |
 | `platform/config/edge/` | namespaces, the CA, the Gateway, the NodePort |
 | `platform/config/guardrails/` | the four Kyverno policies |
@@ -249,45 +248,136 @@ select on it, the Gateway's `allowedRoutes` select on it, and it is what an
 operator reads to know who owns a namespace. A namespace without it cannot
 publish itself through the edge no matter what it writes.
 
+---
+
+## What is deliberately not here
+
+Knowing what not to build is most of the job. Each of these is spoken to in
+documentation rather than stubbed, because a `NodePool` that never scales
+anything is not a demonstration of Karpenter — it is a claim about Karpenter the
+repository cannot back.
+
+| Excluded | Why |
+|---|---|
+| **Karpenter** | Needs a real cloud account, real instance types and a scheduler under genuine pressure. On one kind node it would have nothing to scale. |
+| **KubeCost / OpenCost** | Only meaningful against real billing data. Every number here would be zero or invented, which is worse than absent. |
+| **Cluster API** | Solves cluster lifecycle. This repository has one cluster, created by one `kind` command. |
+| **A service mesh** | Two services do not need it, it roughly doubles per-pod memory, and the one thing it would show here — traffic splitting — Gateway API already expresses. |
+| **Flux alongside Argo** | Not because it is worse. Because two level-triggered reconcilers over overlapping manifests is a write loop, and disjoint ownership needs a boundary a single-cluster platform cannot justify. |
+
+[ROADMAP.md](ROADMAP.md) has what *is* next, in order, with the reasoning.
+
+---
+
+## Run it
+
+**Prerequisites**
+
+| | |
+|---|---|
+| Docker | 4 CPUs and 5120 MiB minimum, 8 CPUs and 8192 MiB recommended. **Not the containerd image store** — see below. |
+| [kind](https://kind.sigs.k8s.io) | creates the cluster |
+| kubectl, [helm](https://helm.sh), git | |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | only for `make init`; the pre-push gate fails closed without it |
+| [kubeconform](https://github.com/yannh/kubeconform) | only for `make lint`, which skips manifest validation with a count when it is absent rather than failing |
+| [kyverno CLI](https://github.com/kyverno/kyverno) | only for `make policy-test`, which fails closed without it — a policy suite that quietly does not run is how a policy matching everything reaches production |
+
+> **Turn off Docker's containerd image store.** Docker Desktop enables it by
+> default and reports its driver as `overlayfs` rather than `overlay2`. Under
+> it, a pulled multi-architecture image is stored as an index whose other
+> platforms are referenced but never fetched, and `kind load docker-image` —
+> which imports with `--all-platforms` — fails on the missing blob with
+> `ctr: content digest sha256:...: not found`. It fails minutes in, only for
+> images that were pulled rather than built, so it reads as a kind bug and is
+> not one. Settings → General → uncheck *Use containerd for pulling and storing
+> images*, restart Docker, and confirm `docker system info --format
+> '{{.Driver}}'` says `overlay2`. `make up` refuses to start otherwise.
+>
+> **Give Docker CPU, but do not max its memory.** Cores are what this platform
+> runs out of first. Memory is the one people over-allocate: Docker Desktop
+> defaults to half of physical RAM, so a 16 GiB machine hands it about 7934 MiB
+> — under the recommended figure — while setting the slider to the full 16 GiB
+> leaves macOS nothing and gets the kind container evicted mid-run. On 16 GiB,
+> 12288 MiB is a good setting; Docker reports back 200–350 MiB less than the
+> slider, so verify with `docker system info` rather than trusting the dialog.
+>
+> **Close other kind clusters first.** Five kind nodes on eight cores starved
+> this control plane into a TLS handshake timeout. `make up` warns if it finds
+> others running.
+
+```bash
+git clone https://github.com/bezilla/kubernetes-platform-reference
+cd kubernetes-platform-reference
+
+make init     # points core.hooksPath at .githooks
+make up       # ~5 minutes on 8 cores; ~17 on a constrained machine
+```
+
+`make up` creates the cluster, installs Argo CD, starts an in-cluster Git
+server, builds the sample image, publishes this repository to that server,
+installs the eight platform components **one at a time**, applies the
+app-of-apps root, and then **blocks until every Application is Synced and
+Healthy**, exiting non-zero if anything is not.
+
+```bash
+make demo     # the four things that prove it works
+make status   # applications, edge, guardrails, workloads
+make argo     # the Argo CD UI, with the admin password
+make down     # delete the cluster and .work/
+```
+
+**Argo CD does not read GitHub.** It reads an in-cluster Git server that
+`make publish` mirrors this working tree into. The Applications pin
+`targetRevision: main`, so the mirror publishes your checked-out branch under
+**`refs/heads/main` on that in-cluster mirror only** — nothing is pushed to
+GitHub, and your branch is not renamed. It is what lets the platform be brought
+up from a topic branch rather than only from `main`.
+
+**Trusting the certificate.** The platform creates its own CA at install time.
+`make demo-https` writes it to `.work/platform-ca.crt` and verifies against it
+with `curl --cacert`. To use a browser, import that file. It is generated per
+cluster and is worthless anywhere else — but do not add it to a system trust
+store and forget about it.
+
 ### Testing
 
 ```bash
 make check          # everything CI runs, no cluster needed
 make lint           # chart lint + render + schema + manifest validation
-                    # (manifest validation SKIPS with a count if kubeconform
-                    #  is absent; in CI its absence is a hard failure)
 make policy-test    # every guardrail against fixtures, offline
 make demo-guardrails  # the same, through live admission control
 ```
 
-Both guardrail suites assert that compliant resources **pass** as well as that
-violations fail. That is not symmetry for its own sake: a policy that matches
-everything and a policy that matches nothing look identical if you only check
-one direction, and this repository shipped the first kind for a day. See
-DESIGN.md.
+CI runs five jobs: chart and manifest validation, the policy suite in both
+directions, the identity and secrets gate over all history at `fetch-depth: 0`,
+a **full bring-up and demo on a clean runner**, and a supply-chain job that
+scans the tree and both built images and keeps an SPDX SBOM per image. Every
+action is pinned by commit SHA; Dependabot moves the pins and CI decides whether
+the move is safe.
 
 ---
 
 ## Related
 
-- **[terragrunt-reference-architecture](https://github.com/bezilla/terragrunt-reference-architecture)** —
-  the cloud-infrastructure half. The AWS accounts, VPCs, EKS clusters and
-  observability pipeline that a platform like this one runs on top of.
-- **[otel-service-reference](https://github.com/bezilla/otel-service-reference)** —
-  the instrumented workload, and where its OpenTelemetry wiring comes from.
-  **You do not need it to run this repository.** If a checkout is present at
-  `../otel-service-reference`, `make up` builds the real service from it. If it
-  is not, the bring-up builds a placeholder from `bootstrap/fallback-workload`
-  that serves the same `/healthz` the chart probes, on the same ports, as the
-  same non-root user — so the paved road, the edge, the certificate and the
-  guardrails are all still demonstrated. What is lost is the telemetry, and
-  only that.
+Three repositories, one system — the cloud underneath, the platform in the
+middle, the application on top.
 
-Together: the cloud underneath, the platform in the middle, the application on
-top.
+- **[terragrunt-reference-architecture](https://github.com/bezilla/terragrunt-reference-architecture)** —
+  the cloud half. AWS accounts, VPCs, EKS clusters and the observability
+  pipeline a platform like this one runs on top of. The `platform.internal/team`
+  labels the guardrails enforce here are what its cost attribution would key on.
+- **[otel-service-reference](https://github.com/bezilla/otel-service-reference)** —
+  the instrumented workload, and where the OpenTelemetry wiring comes from.
+  **You do not need it to run this repository.** With a checkout at
+  `../otel-service-reference`, `make up` builds the real service. Without one it
+  builds a placeholder from `bootstrap/fallback-workload` that serves the same
+  `/healthz` the chart probes, on the same ports, as the same non-root user — so
+  the paved road, the edge, the certificate and the guardrails are all still
+  demonstrated. What is lost is the telemetry, and only that. CI takes that
+  path on every run.
 
 ## Documents
 
-- **[DESIGN.md](DESIGN.md)** — decisions, rejected alternatives, and the four
-  bugs that changed how this is tested
+- **[DESIGN.md](DESIGN.md)** — the decisions, the alternatives rejected, and
+  every bug that changed how this is tested. Start here.
 - [ROADMAP.md](ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md) · [SECURITY.md](SECURITY.md)

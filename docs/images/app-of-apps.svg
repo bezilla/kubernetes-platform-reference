@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1284 892" width="1284" height="892" role="img" aria-labelledby="t d">
+<title id="t">The Argo CD app-of-apps tree: one root Application applied by hand, eight children it produces, and what a tenant receives from them</title>
+<desc id="d">platform-root is the only kubectl apply in the bring-up. It produces eight child Applications in sync-wave order: argocd-repositories, cert-manager, envoy-gateway, kyverno, platform-config, guardrails, otel-collector and quote-api. Four come from upstream Helm charts and four from this repository.</desc>
+<style>text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}.m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}</style>
+<rect width="1284" height="892" fill="#0d1117"/>
+<text x="60" y="52" fill="#f0f6fc" font-size="27" font-weight="700">One Application applied by hand. Eight it produces.</text>
+<text x="60" y="80" fill="#8b949e" font-size="14">Adding a platform component is a file in platform/applications/ and a commit — never helm install.</text>
+<text x="60" y="128" fill="#58a6ff" font-size="12" font-weight="700">1 · APPLIED BY HAND, ONCE</text>
+<rect x="60" y="142" width="560" height="96" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="1"/>
+<text x="80" y="172" fill="#f0f6fc" font-size="18" font-weight="700">platform-root</text>
+<text x="80" y="196" fill="#8b949e" font-size="12">Application · path platform/applications/ · targetRevision main</text>
+<text x="80" y="218" fill="#3fb950" font-size="12">the only kubectl apply in the whole bring-up</text>
+<path d="M340 238 L340 268" stroke="#58a6ff" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#58a6ff"/></marker></defs>
+<text x="356" y="262" fill="#58a6ff" font-size="12">produces, in sync-wave order</text>
+<text x="60" y="300" fill="#58a6ff" font-size="12" font-weight="700">2 · EIGHT CHILDREN — FOUR UPSTREAM CHARTS, FOUR THIS REPOSITORY</text>
+<rect x="60" y="316" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="60" y="316" width="4" height="152" rx="2" fill="#bc8cff"/>
+<rect x="78" y="332" width="62" height="20" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="1"/>
+<text x="109" y="346" fill="#bc8cff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave -1</text>
+<text x="78" y="378" fill="#f0f6fc" font-size="16" font-weight="700">argocd-repositories</text>
+<text x="78" y="398" fill="#8b949e" font-size="11">in-repo · platform/config/argocd</text>
+<line x1="78" y1="412" x2="318" y2="412" stroke="#30363d"/>
+<text x="78" y="434" fill="#c9d1d9" font-size="12">Registers the OCI repo Argo must</text>
+<text x="78" y="452" fill="#c9d1d9" font-size="12">know before naming a chart there.</text>
+<rect x="356" y="316" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="356" y="316" width="4" height="152" rx="2" fill="#58a6ff"/>
+<rect x="374" y="332" width="62" height="20" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+<text x="405" y="346" fill="#58a6ff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 0</text>
+<text x="374" y="378" fill="#f0f6fc" font-size="16" font-weight="700">cert-manager</text>
+<text x="374" y="398" fill="#8b949e" font-size="11">Helm · charts.jetstack.io · v1.21.1</text>
+<line x1="374" y1="412" x2="614" y2="412" stroke="#30363d"/>
+<text x="374" y="434" fill="#c9d1d9" font-size="12">Every certificate, issued and</text>
+<text x="374" y="452" fill="#c9d1d9" font-size="12">renewed. No team sees a CSR.</text>
+<rect x="652" y="316" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="652" y="316" width="4" height="152" rx="2" fill="#58a6ff"/>
+<rect x="670" y="332" width="62" height="20" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+<text x="701" y="346" fill="#58a6ff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 1</text>
+<text x="670" y="378" fill="#f0f6fc" font-size="16" font-weight="700">envoy-gateway</text>
+<text x="670" y="398" fill="#8b949e" font-size="11">Helm · OCI envoyproxy · v1.9.1</text>
+<line x1="670" y1="412" x2="910" y2="412" stroke="#30363d"/>
+<text x="670" y="434" fill="#c9d1d9" font-size="12">The Gateway API implementation —</text>
+<text x="670" y="452" fill="#c9d1d9" font-size="12">the only place Envoy is named.</text>
+<rect x="948" y="316" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="948" y="316" width="4" height="152" rx="2" fill="#58a6ff"/>
+<rect x="966" y="332" width="62" height="20" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+<text x="997" y="346" fill="#58a6ff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 2</text>
+<text x="966" y="378" fill="#f0f6fc" font-size="16" font-weight="700">kyverno</text>
+<text x="966" y="398" fill="#8b949e" font-size="11">Helm · kyverno.github.io · 3.9.0</text>
+<line x1="966" y1="412" x2="1206" y2="412" stroke="#30363d"/>
+<text x="966" y="434" fill="#c9d1d9" font-size="12">The admission webhook the</text>
+<text x="966" y="452" fill="#c9d1d9" font-size="12">guardrails run inside.</text>
+<rect x="60" y="488" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="60" y="488" width="4" height="152" rx="2" fill="#bc8cff"/>
+<rect x="78" y="504" width="62" height="20" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="1"/>
+<text x="109" y="518" fill="#bc8cff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 3</text>
+<text x="78" y="550" fill="#f0f6fc" font-size="16" font-weight="700">platform-config</text>
+<text x="78" y="570" fill="#8b949e" font-size="11">in-repo · platform/config/edge</text>
+<line x1="78" y1="584" x2="318" y2="584" stroke="#30363d"/>
+<text x="78" y="606" fill="#c9d1d9" font-size="12">Namespaces, the CA, the shared</text>
+<text x="78" y="624" fill="#c9d1d9" font-size="12">Gateway, the NodePort.</text>
+<rect x="356" y="488" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="356" y="488" width="4" height="152" rx="2" fill="#bc8cff"/>
+<rect x="374" y="504" width="62" height="20" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="1"/>
+<text x="405" y="518" fill="#bc8cff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 4</text>
+<text x="374" y="550" fill="#f0f6fc" font-size="16" font-weight="700">guardrails</text>
+<text x="374" y="570" fill="#8b949e" font-size="11">in-repo · platform/config/guardrails</text>
+<line x1="374" y1="584" x2="614" y2="584" stroke="#30363d"/>
+<text x="374" y="606" fill="#c9d1d9" font-size="12">Four ClusterPolicies, Enforce,</text>
+<text x="374" y="624" fill="#c9d1d9" font-size="12">tenant namespaces only.</text>
+<rect x="652" y="488" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="652" y="488" width="4" height="152" rx="2" fill="#58a6ff"/>
+<rect x="670" y="504" width="62" height="20" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+<text x="701" y="518" fill="#58a6ff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 5</text>
+<text x="670" y="550" fill="#f0f6fc" font-size="16" font-weight="700">otel-collector</text>
+<text x="670" y="570" fill="#8b949e" font-size="11">Helm · open-telemetry · 0.172.0</text>
+<line x1="670" y1="584" x2="910" y2="584" stroke="#30363d"/>
+<text x="670" y="606" fill="#c9d1d9" font-size="12">The OTLP endpoint every workload</text>
+<text x="670" y="624" fill="#c9d1d9" font-size="12">is wired to without asking.</text>
+<rect x="948" y="488" width="276" height="152" rx="10" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="948" y="488" width="4" height="152" rx="2" fill="#bc8cff"/>
+<rect x="966" y="504" width="62" height="20" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="1"/>
+<text x="997" y="518" fill="#bc8cff" font-size="11" font-weight="600" text-anchor="middle" font-family="ui-monospace,monospace">wave 6</text>
+<text x="966" y="550" fill="#f0f6fc" font-size="16" font-weight="700">quote-api</text>
+<text x="966" y="570" fill="#8b949e" font-size="11">in-repo · charts/paved-road</text>
+<line x1="966" y1="584" x2="1206" y2="584" stroke="#30363d"/>
+<text x="966" y="606" fill="#c9d1d9" font-size="12">One tenant on the paved road —</text>
+<text x="966" y="624" fill="#c9d1d9" font-size="12">twenty lines of values.yaml.</text>
+<text x="60" y="682" fill="#3fb950" font-size="12" font-weight="700">3 · WHAT A TENANT RECEIVES FROM THEM, WITHOUT ASKING</text>
+<rect x="60" y="696" width="1164" height="96" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1" stroke-dasharray="5 4"/>
+<rect x="82" y="711" width="229" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="196.5" y="729" fill="#c9d1d9" font-size="12" text-anchor="middle">HTTPS on a platform certificate</text>
+<rect x="321" y="711" width="235" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="438.5" y="729" fill="#c9d1d9" font-size="12" text-anchor="middle">a hostname, plaintext redirected</text>
+<rect x="566" y="711" width="202" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="667.0" y="729" fill="#c9d1d9" font-size="12" text-anchor="middle">resource limits from a tier</text>
+<rect x="778" y="711" width="202" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="879.0" y="729" fill="#c9d1d9" font-size="12" text-anchor="middle">restricted security profile</text>
+<rect x="82" y="745" width="229" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="196.5" y="763" fill="#c9d1d9" font-size="12" text-anchor="middle">readiness + startup probes, PDB</text>
+<rect x="321" y="745" width="268" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="455.0" y="763" fill="#c9d1d9" font-size="12" text-anchor="middle">OTLP endpoint and resource attributes</text>
+<rect x="599" y="745" width="235" height="26" rx="13" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="716.5" y="763" fill="#c9d1d9" font-size="12" text-anchor="middle">ownership labels on every object</text>
+<text x="60" y="820" fill="#f0f6fc" font-size="13" font-weight="700">9 Applications in total.</text>
+<text x="212" y="820" fill="#8b949e" font-size="13">make up installs them one at a time, blocking until each is Synced and Healthy, then applies the root — which adopts all eight without reinstalling anything.</text>
+<rect x="60" y="838" width="10" height="10" rx="2" fill="#58a6ff"/>
+<text x="78" y="847" fill="#8b949e" font-size="12">upstream Helm chart, version-pinned in versions.env</text>
+<rect x="428" y="838" width="10" height="10" rx="2" fill="#bc8cff"/>
+<text x="446" y="847" fill="#8b949e" font-size="12">this repository — a path, reconciled from a commit</text>
+</svg>
