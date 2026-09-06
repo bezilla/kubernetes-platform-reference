@@ -62,6 +62,21 @@ The tenancy model here is one label and one namespace. The next honest step is
 This is deferred rather than excluded because it is real platform work that a
 single-node cluster can demonstrate — it just was not the spine.
 
+## v0.5 — Environments that are installed, not only rendered
+
+`environments/local.yaml`, `staging.yaml` and `production.yaml` exist and are
+checked on every commit: every tenant renders in every environment, the output
+validates, it satisfies all four guardrails, and the three demonstrably differ.
+
+What is missing is that only `local` is ever brought up. The honest next step is
+not a fourth file, it is the parts of an environment that a values layer cannot
+express: the certificate issuer (a self-signed CA locally, ACME above it), the
+edge Service type (NodePort on kind, LoadBalancer on a cloud), the DNS zone, and
+the Envoy fleet's own sizing. Those live in `platform/config/edge/`, which is
+plain YAML rather than a chart, so parameterising them means deciding whether
+that directory becomes a chart or gains an overlay — a real design decision, and
+the reason this is a roadmap item rather than a patch.
+
 ## Requires real infrastructure
 
 Not scheduled, because they cannot be shown honestly on kind. See DESIGN.md for

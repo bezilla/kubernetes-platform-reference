@@ -40,6 +40,11 @@ jobs:
         run: make shell-check
       - name: helm lint, render, schema and manifest validation
         run: make lint
+      - name: every environment renders, validates and passes the guardrails
+        # Three environments times two tenants, plus an assertion that the three
+        # actually differ -- an environment layer that renders identically
+        # everywhere is decoration, and would otherwise pass silently.
+        run: make check-environments
       - name: versions.env agrees with every Application manifest
         # The Application manifests cannot source a shell file, so each carries
         # its chart version literally. This is the check that keeps that

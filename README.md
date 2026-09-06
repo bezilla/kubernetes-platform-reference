@@ -285,6 +285,40 @@ publish itself through the edge no matter what it writes.
 
 ---
 
+## Environments
+
+A team that says nothing about size gets numbers appropriate to where the
+service is running. A team that says something wins. `environments/*.yaml` is
+layered **under** a team's values file, so it sets defaults rather than ceilings
+— ceilings are the guardrails' job, enforced at admission where a values file
+cannot out-argue them.
+
+The same tenant, setting only the four required fields, rendered three ways:
+
+| | replicas | cpu request | PodDisruptionBudget | edge timeout |
+|---|---|---|---|---|
+| **local** | 1 | 200m | no | 60s |
+| **staging** | 2 | 500m | yes | 30s |
+| **production** | 3 | 1000m | yes | 15s |
+
+What does *not* change between them is the security posture: the same four
+guardrails, the same restricted profile, the same mandatory ownership labels. An
+environment that relaxes policy is not a rehearsal, it is a different play.
+
+`make check-environments` renders every environment for every tenant, validates
+the output, checks it against all four guardrails, and asserts the three
+environments actually produce different shapes — an environment layer that
+renders identically everywhere is decoration, and would otherwise pass in
+silence. It runs in CI on every commit.
+
+**What this does not claim.** Only `local` is ever installed. There is one kind
+cluster, and standing up three would be the stub this repository keeps refusing
+to build. The environment files are a rendering contract and that contract is
+checked; bringing staging and production up for real needs real infrastructure,
+and is [in the roadmap](ROADMAP.md) rather than faked here.
+
+---
+
 ## What is deliberately not here
 
 Knowing what not to build is most of the job. Each of these is spoken to in

@@ -28,6 +28,10 @@ help: ## Show this help
 up: ## Build the whole platform from nothing (needs Docker with 8 GiB)
 	@./scripts/up.sh
 
+.PHONY: upgrade-test
+upgrade-test: ## Install the previous chart versions, then upgrade in place
+	@./scripts/upgrade-test.sh
+
 .PHONY: down
 down: ## Delete the cluster and .work/
 	@./scripts/down.sh
@@ -87,8 +91,12 @@ policy-test: ## Run the Kyverno policies against known-good and known-bad resour
 check-versions: ## Prove versions.env agrees with every Application manifest
 	@./scripts/check-versions.sh
 
+.PHONY: check-environments
+check-environments: ## Render every environment for every tenant, and check it
+	@./scripts/check-environments.sh
+
 .PHONY: check
-check: lint check-versions policy-test identity ## Everything CI runs that does not need a cluster
+check: lint check-versions check-environments policy-test identity ## Everything CI runs that does not need a cluster
 
 # --- the gate -----------------------------------------------------------------
 

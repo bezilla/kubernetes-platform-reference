@@ -1,0 +1,18 @@
+# Platform defaults for production.
+#
+# The only file here whose numbers cost money, and the reason the other two
+# exist: a team that has run in staging has already run under this shape, minus
+# the size.
+observability:
+  environment: production
+
+# Three replicas, so a node can be drained without the service going with it.
+replicas: 3
+
+resources:
+  tier: medium
+
+ingress:
+  # Tight. A request still open after fifteen seconds in production is a request
+  # nobody is waiting for any more, and holding it costs a connection slot.
+  timeout: 15s

@@ -1,0 +1,25 @@
+# Platform defaults for the local environment — the one `make up` builds.
+#
+# An environment file is layered UNDER a team's values file, so everything here
+# is a default a team may override and nothing here is a ceiling. Ceilings are
+# the guardrails' job: policy is enforced at admission, where it cannot be
+# out-argued by a values file, and this layer is only about sensible starting
+# points that differ by where the service is running.
+#
+# The rule for what belongs here: if the answer changes between environments and
+# the team should not have to think about it, it goes in this file. If the team
+# must decide it, it stays in theirs.
+observability:
+  environment: local
+
+# One replica locally. A laptop is not the place to discover that three copies
+# of everything does not fit, and nothing about the paved road needs more than
+# one to be demonstrated.
+replicas: 1
+
+resources:
+  tier: nano
+
+ingress:
+  # Generous locally: a breakpoint in a debugger should not read as a timeout.
+  timeout: 60s

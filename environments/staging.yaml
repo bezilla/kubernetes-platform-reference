@@ -1,0 +1,19 @@
+# Platform defaults for staging.
+#
+# Staging exists to be production-shaped and cheaper, so the numbers move toward
+# production while staying small enough that nobody argues about the bill. What
+# does NOT change is the security posture: the same guardrails, the same
+# restricted profile, the same mandatory ownership labels. An environment that
+# relaxes policy is not a rehearsal, it is a different play.
+observability:
+  environment: staging
+
+# Two replicas: enough that a rolling update actually rolls, and enough for the
+# chart to render a PodDisruptionBudget, which is the behaviour under test.
+replicas: 2
+
+resources:
+  tier: small
+
+ingress:
+  timeout: 30s
