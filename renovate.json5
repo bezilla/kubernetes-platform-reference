@@ -23,7 +23,7 @@
     'helpers:pinGitHubActionDigests',
   ],
 
-  timezone: 'America/Denver',
+  timezone: 'Etc/UTC',
   schedule: ['before 9am on monday'],
 
   // No branches, no pull requests, ever
