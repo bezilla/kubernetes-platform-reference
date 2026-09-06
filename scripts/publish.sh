@@ -28,6 +28,18 @@ rm -rf "$MIRROR"
 mkdir -p .work
 git init -q --bare "$MIRROR"
 git push -q "$MIRROR" "+refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+# Every Application pins `targetRevision: main`, and lint.sh rejects a
+# floating HEAD, so the ref they track has to be a real branch name. But this
+# script mirrors whatever branch is checked out. From a topic branch the
+# server therefore has no `main` at all, and every Application sits in
+# ComparisonError -- "unable to resolve 'main' to a commit SHA" -- until its
+# deadline expires. The platform can only come up on `main`, which makes a
+# branch the one place you cannot test a change to it.
+#
+# Publishing the working branch under `main` as well is what makes the
+# bring-up work from any branch. On `main` the two refspecs name the same
+# ref and git rejects the duplicate, so only alias when they differ.
+[ "$BRANCH" = 'main' ] || git push -q "$MIRROR" "+refs/heads/${BRANCH}:refs/heads/main"
 git -C "$MIRROR" symbolic-ref HEAD "refs/heads/${BRANCH}"
 # No `git update-server-info` here. That command exists to generate the static
 # info/refs a DUMB HTTP client reads; the server runs git-http-backend, which
