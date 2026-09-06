@@ -20,15 +20,27 @@ who maintains this**, everything after that is how it is built and why.
 
 ## The result
 
-![The Argo CD app-of-apps tree, every Application Synced and Healthy](docs/images/argocd-tree.png)
-
 Nine Applications. One of them — `platform-root` — is the only thing applied by
 hand; it produces the other eight. Adding a platform component means adding a
 file to `platform/applications/` and committing, never `helm install`.
 
-![The sample workload answering over HTTPS through Gateway API](docs/images/https-demo.png)
+```
+$ kubectl -n argocd get applications
+NAME                  SYNC STATUS   HEALTH STATUS
+argocd-repositories   Synced        Healthy
+cert-manager          Synced        Healthy
+envoy-gateway         Synced        Healthy
+guardrails            Synced        Healthy
+kyverno               Synced        Healthy
+otel-collector        Synced        Healthy
+platform-config       Synced        Healthy
+platform-root         Synced        Healthy
+quote-api             Synced        Healthy
+```
 
-![Six violations refused, the compliant deploy admitted](docs/images/guardrails-demo.png)
+`make demo` prints the other two results: the sample workload answering over
+HTTPS on a certificate issued by the platform's own CA, and six policy
+violations refused at admission with the compliant deploy admitted.
 
 ---
 
@@ -38,17 +50,31 @@ file to `platform/applications/` and committing, never `helm install`.
 
 | | |
 |---|---|
-| Docker | **8 GiB of memory, minimum.** See below — this is the one that bites. |
+| Docker | 4 CPUs and 5120 MiB minimum, 8 CPUs and 8192 MiB recommended. **Not the containerd image store** — see below. |
 | [kind](https://kind.sigs.k8s.io) | creates the cluster |
 | kubectl, [helm](https://helm.sh), git | |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | only for `make init`; the pre-push gate fails closed without it |
+| [kubeconform](https://github.com/yannh/kubeconform) | only for `make lint`, which skips manifest validation with a count when it is absent rather than failing |
 
-> **Docker memory is not a suggestion.** The platform settles at about 4 GiB but
-> peaks well above that while four Helm charts unpack at once. Below 8 GiB the
-> symptom is not an out-of-memory error — it is the API server going
-> unreachable, which reads exactly like a broken cluster and is not one. This
-> was diagnosed the hard way at 3.8 GiB. `make up` refuses to start below 7 GiB
-> and tells you where the setting is.
+> **Turn off Docker's containerd image store.** Docker Desktop enables it by
+> default and reports its driver as `overlayfs` rather than `overlay2`. Under
+> it, a pulled multi-architecture image is stored as an index whose other
+> platforms are referenced but never fetched, and `kind load docker-image` —
+> which imports with `--all-platforms` — fails on the missing blob with
+> `ctr: content digest sha256:...: not found`. It fails minutes in, only for
+> images that were pulled rather than built, so it reads as a kind bug and is
+> not one. Settings → General → uncheck *Use containerd for pulling and storing
+> images*, restart Docker, and confirm `docker system info --format
+> '{{.Driver}}'` says `overlay2`. `make up` refuses to start otherwise.
+>
+> **Give Docker CPU, but do not max its memory.** Cores are what this platform
+> runs out of first. Memory is the one people over-allocate: Docker Desktop
+> defaults to half of physical RAM, so a 16 GiB machine hands it about 7934 MiB
+> — under the recommended figure — while setting the slider to the full 16 GiB
+> leaves macOS nothing and gets the kind container evicted mid-run. On 16 GiB,
+> 12288 MiB is a good setting; Docker reports back 200–350 MiB less than the
+> slider, so verify with `docker system info` rather than trusting the dialog.
+> `make up` checks both CPU and memory, in MiB, before it starts.
 >
 > **Close other kind clusters first.** Five kind nodes on eight cores starved
 > this control plane into a TLS handshake timeout. `make up` warns if it finds
@@ -59,14 +85,25 @@ git clone https://github.com/bezilla/kubernetes-platform-reference
 cd kubernetes-platform-reference
 
 make init     # points core.hooksPath at .githooks
-make up       # ~10 minutes on a first run; pulls five charts
+make up       # ~5 minutes on 8 cores; ~17 on a constrained machine
 ```
 
 `make up` creates the cluster, installs Argo CD, starts an in-cluster Git
 server, builds the sample image, publishes this repository to that server,
-applies the app-of-apps root, and then **blocks until every Application is
-Synced and Healthy**, exiting non-zero if anything is not. It prints a status
-table when it finishes.
+installs the eight platform components **one at a time**, applies the
+app-of-apps root, and then **blocks until every Application is Synced and
+Healthy**, exiting non-zero if anything is not. It prints a status table when it
+finishes.
+
+Installing one component at a time is deliberate and is not what Argo CD's sync
+waves do on their own — see [DESIGN.md](DESIGN.md#what-the-sync-waves-actually-do).
+
+**Argo CD does not read GitHub.** It reads an in-cluster Git server that
+`make publish` mirrors this working tree into. The Applications pin
+`targetRevision: main`, so the mirror publishes your checked-out branch under
+**`refs/heads/main` on that in-cluster mirror only** — nothing is pushed to
+GitHub, and your branch is not renamed. It is what lets the platform be brought
+up from a topic branch rather than only from `main`.
 
 ```bash
 make demo     # the three things that prove it works
@@ -209,6 +246,8 @@ publish itself through the edge no matter what it writes.
 ```bash
 make check          # everything CI runs, no cluster needed
 make lint           # chart lint + render + schema + manifest validation
+                    # (manifest validation SKIPS with a count if kubeconform
+                    #  is absent; in CI its absence is a hard failure)
 make policy-test    # every guardrail against fixtures, offline
 make demo-guardrails  # the same, through live admission control
 ```
@@ -227,8 +266,14 @@ DESIGN.md.
   the cloud-infrastructure half. The AWS accounts, VPCs, EKS clusters and
   observability pipeline that a platform like this one runs on top of.
 - **[otel-service-reference](https://github.com/bezilla/otel-service-reference)** —
-  the instrumented workload. The service deployed here through the paved-road
-  chart, and where its OpenTelemetry wiring comes from.
+  the instrumented workload, and where its OpenTelemetry wiring comes from.
+  **You do not need it to run this repository.** If a checkout is present at
+  `../otel-service-reference`, `make up` builds the real service from it. If it
+  is not, the bring-up builds a placeholder from `bootstrap/fallback-workload`
+  that serves the same `/healthz` the chart probes, on the same ports, as the
+  same non-root user — so the paved road, the edge, the certificate and the
+  guardrails are all still demonstrated. What is lost is the telemetry, and
+  only that.
 
 Together: the cloud underneath, the platform in the middle, the application on
 top.

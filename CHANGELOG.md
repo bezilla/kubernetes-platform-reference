@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The platform can be brought up from any branch.** `publish.sh` mirrors the
+  working branch under `refs/heads/main` in the in-cluster Git server as well as
+  under its own name. The Applications pin `targetRevision: main`, so from a
+  topic branch the mirror previously had no `main` and every Application sat in
+  `ComparisonError` until its deadline. The alias is written to the in-cluster
+  mirror only; nothing is pushed to GitHub.
+- **The fallback workload passes the chart's probes.** It is now built from
+  `bootstrap/fallback-workload` rather than pulled and tagged. The previous
+  fallback served no `/healthz`, so on any machine without a checkout of
+  `otel-service-reference` the pod crash-looped until the 900s deadline.
+- **`make demo-gitops` no longer commits to your branch.** It builds its commit
+  with plumbing and publishes it from a scratch ref that is then deleted. HEAD,
+  the index and the working tree are untouched.
+- **macOS `tar` no longer corrupts the published repository.** `COPYFILE_DISABLE=1`
+  stops BSD tar writing AppleDouble `._` entries into the bare mirror.
+- **`make up` refuses Docker's containerd image store.** Under it, `kind load
+  docker-image` fails on a pulled multi-architecture image several minutes into
+  a run. The preflight names the driver and the setting.
+- **`make lint` skips manifest validation with a count when `kubeconform` is
+  absent**, rather than reporting 29 validation failures that were really one
+  missing binary. In CI its absence remains a hard failure.
+
 ## [0.1.0]
 
 ### Added

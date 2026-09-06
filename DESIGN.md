@@ -222,14 +222,38 @@ still Degraded.
 That is still worth having. Three concurrent Helm installs plus their CRD
 registrations saturated a single-node control plane badly enough that the API
 server stopped answering — a TLS handshake timeout that reads like a dead
-cluster and is not one. Staggering the starts was enough: the API server stayed
-reachable for the whole install afterwards.
+cluster and is not one.
 
-**Removing `automated` from the children would make it a real barrier, and that
-trade was rejected.** The root would then drive every sync in strict order, but
-the children would lose self-healing, and a commit would no longer change the
-cluster on its own — which is the property this repository exists to
-demonstrate. That is a bad trade for a constraint only a small cluster needs.
+**Staggering the starts was not enough, and an earlier version of this document
+claimed it was.** On an 8-core machine the waves let five charts unpack at once
+anyway, because a wave orders when the child Application *object* is created and
+nothing more. The node reached roughly 1900% of 800% available CPU, etcd read
+latency went from a 100ms budget to 1.0–1.5s, the API server could not answer a
+5s lease renewal, and `kube-controller-manager` and `kube-scheduler` both lost
+leader election and crash-looped. Nothing reconciled after that, so every
+Application sat Progressing forever. The symptom was never memory: that run held
+4.6 GiB of 7.7 GiB.
+
+**What actually fixed it was serializing the install outside Argo CD.**
+`scripts/up.sh` applies one child Application, blocks in
+`scripts/wait-for-app.sh` until it is genuinely Synced *and* Healthy, and only
+then creates the next. The manifests are unchanged and still declare their
+waves; the bring-up simply refuses to run them concurrently. Once every child
+exists and matches, the app-of-apps root is applied and adopts all eight without
+reinstalling anything. Steady state is identical — adding a component is still a
+file and a commit.
+
+The measured difference, same charts and same deadlines: 8 cores and 11946 MiB
+installed all eight components in 171s with zero control-plane restarts, where
+the constrained machine took 934s and restarted the controller manager and
+scheduler twice each on its successful run.
+
+**Removing `automated` from the children would make waves a real barrier, and
+that trade was rejected.** The root would then drive every sync in strict order,
+but the children would lose self-healing, and a commit would no longer change
+the cluster on its own — which is the property this repository exists to
+demonstrate. Serializing in the bring-up script costs nothing at steady state;
+removing `automated` would cost the thing being demonstrated.
 
 **Within a single Application, waves hold strictly.** Argo waits for each wave to
 become healthy before starting the next. `platform/config/edge` depends on
@@ -277,6 +301,70 @@ are scoped to a group and kind rather than applied globally.
 
 ---
 
+## Why Argo CD reads an in-cluster mirror, not GitHub
+
+**Decision.** Argo CD's repository is a Git server running inside the cluster.
+`scripts/publish.sh` mirrors the working tree into it; nothing in the bring-up
+reads github.com.
+
+This exists so the demonstration is self-contained: no deploy key to issue, no
+network dependency, and a `make demo-gitops` that changes the running cluster
+from a commit without pushing anything to a remote anyone else can see.
+
+**The main alias, and what it does not mean.** Every Application pins
+`targetRevision: main`, because `scripts/lint.sh` rejects a floating `HEAD` and
+the ref Argo tracks therefore has to be a branch name. But `publish.sh` mirrors
+whatever branch is checked out. From a topic branch the mirror then had no
+`main` at all, and every Application sat in `ComparisonError` — *unable to
+resolve 'main' to a commit SHA* — until its deadline expired. The platform could
+only be brought up on `main`, which made a branch the one place a change to the
+platform could not be tested.
+
+So `publish.sh` publishes the working branch under `refs/heads/main` as well.
+**That alias exists only inside the in-cluster mirror.** Nothing is pushed to
+GitHub, no branch is renamed, and the repository's own `main` is untouched. On
+`main` the two refspecs name the same ref, so the alias is only written when
+they differ.
+
+---
+
+## Why the fallback workload is built, not pulled
+
+The workload deployed here is the service from `otel-service-reference`, which
+has no published image. A reference platform whose `make up` depends on a second
+private repository is a reference platform nobody but its author can run, so
+there is a fallback — and the fallback has to be as real as the thing it stands
+in for.
+
+The first version was not. It pulled a public `nginx-unprivileged` and tagged
+it, on the documented claim that it satisfied every guardrail including
+"probeable". Three of the four held: non-root, tagged, resource-bounded. The
+fourth did not. The chart points its startup *and* readiness probes at
+`/healthz`, and stock nginx serves no such path, so the startup probe failed
+fifteen times at two-second intervals, the kubelet killed the container, and the
+Application sat `Synced/Degraded` until the 900s per-component deadline. The
+container exited 0 each time — nginx shuts down cleanly on SIGTERM — so the pod
+described itself as `Completed` while never once being Ready.
+
+The cost fell entirely on the person this repository is written for: anyone
+cloning it without the sibling checkout paid 900s to be told nothing useful.
+
+`bootstrap/fallback-workload` is one nginx config on the same pinned base. It
+answers `/healthz` on 8080, and answers on 8081 as well because
+`apps/quote-api/values.yaml` declares a pricing port and a declared port nothing
+listens on is a lie the next reader has to disprove. The base stays pinned in
+`versions.env` and is passed in as a build argument, so there is still one place
+the version lives.
+
+The general lesson, which is the reason this is written down: **a placeholder
+has to satisfy the same contract as the thing it replaces, and the contract here
+was the chart's, not the image's.** The probe path is what the chart promises
+about any workload on the paved road. It was not fixable by choosing a
+better-behaved public image, because no public image serves an arbitrary
+application's health path.
+
+---
+
 ## What is deliberately not here
 
 | Excluded | Why |
@@ -295,9 +383,10 @@ is a claim about Karpenter that the repository cannot back.
 
 ## Bugs, and what they changed
 
-The four below all shipped, all passed review by reading, and all were found by
-running something. They are recorded because each one changed how the repository
-is tested, not just what it contains.
+Every one below shipped, passed review by reading, and was found by running
+something. They are recorded because each changed how the repository is tested,
+not just what it contains. The first four were found while building it; the rest
+were found by bringing it up from nothing on a machine that had never run it.
 
 **A guardrail that never fired.** `disallow-latest-tag` was written as
 `image: "!*:latest | !*:latest@* "`, which reads as "not `:latest`, and not
@@ -330,6 +419,43 @@ and the CLI treated every rule as not-matching and called it a pass.
 its own rules is the same false confidence as the bug it was written to catch,
 wearing a greener colour.
 
+**A platform that could only be installed from `main`.** Described above under
+the in-cluster mirror. The shape of it generalises: the Applications and the
+publish step each held one half of a contract about which ref Argo would read,
+and neither half was wrong on its own. It could only be found by running the
+bring-up from a branch, which is the one thing nobody does when the branch is
+where the fix lives.
+
+**A fallback workload that could never become Ready.** Described above. The
+documentation asserted the property — "probeable" — that the image did not have,
+so reading the repository confirmed the claim and only running it disproved it.
+
+**A demonstration that committed to the reader's branch.** `make demo-gitops`
+edited `apps/quote-api/values.yaml` in the working tree and ran `git commit` on
+whatever was checked out, so every run left a "Run quote-api on N replicas"
+commit in the middle of someone's work, and a dirty tree if it failed partway.
+It now builds the commit with plumbing and parks it on a scratch ref that is
+published and deleted; HEAD, the index and the working tree are never touched.
+A demonstration that alters the thing it is demonstrating on is not a
+demonstration.
+
+**A `tar` that corrupted the published repository.** BSD tar on macOS writes an
+AppleDouble `._name` entry per file to carry extended attributes. Piping the
+mirror through it published those into the bare repo, where git read them as
+pack files and errored on every ref it resolved. The mirror on disk was clean —
+the corruption was introduced in transit. It never failed a bring-up outright,
+which is why it survived: it only made every publish log errors that looked like
+a damaged repository.
+
+**Two host defects that cost two full runs, now refused in preflight.** Docker
+Desktop's containerd image store made `kind load docker-image` fail on a pulled
+multi-architecture image, minutes into a run, in a way that reads as a kind bug.
+And `make lint` reported 29 manifest validation *failures* on a clean machine
+when the truth was that `kubeconform` was not installed — a missing checker
+reported as a broken repository. `up.sh` now refuses the first by name, and
+`lint.sh` reports the second as skipped with a count, because a check that did
+not run is not a check that passed.
+
 ---
 
 ## Related
@@ -338,5 +464,7 @@ wearing a greener colour.
   the cloud-infrastructure half: the AWS accounts, networking, EKS and
   observability that a platform like this one would sit on.
 - [otel-service-reference](https://github.com/bezilla/otel-service-reference) —
-  the instrumented workload: the service deployed here through the paved-road
-  chart, and where its OpenTelemetry wiring comes from.
+  the instrumented workload, and where its OpenTelemetry wiring comes from. It
+  is optional: absent a checkout at `../otel-service-reference`, `make up`
+  builds the placeholder in `bootstrap/fallback-workload` instead, and only the
+  telemetry is lost. See "Why the fallback workload is built, not pulled".
