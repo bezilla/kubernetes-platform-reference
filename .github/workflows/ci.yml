@@ -112,10 +112,22 @@ jobs:
     # says the charts support up to 1.34; running only 1.34 makes that half a
     # claim. fail-fast is off because "1.32 broke and 1.33 was cancelled" is
     # strictly less useful than knowing about both.
-    name: bring-up · demo · k8s ${{ matrix.k8s.version }}
+    #
+    # THE SIBLING WORKLOAD REPOSITORY IS NOT CHECKED OUT HERE, deliberately.
+    # ../otel-service-reference is absent on the runner, so sample-image.sh takes
+    # its fallback branch and builds bootstrap/fallback-workload. That is the
+    # path a stranger cloning this repository takes, so it is the path CI has to
+    # prove -- and on it the placeholder speaks no OTLP, so demo-telemetry
+    # reports zero spans and says which of its two reasons that is.
+    name: fallback path · bring-up · demo · k8s ${{ matrix.k8s.version }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # A backstop only. The real ceiling is derived from versions.env inside the
+    # step below, so the bound the platform declares for itself is the bound that
+    # fires, and it fires with the platform's own message rather than a silent
+    # workflow kill. This number is deliberately larger than that.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -126,61 +138,106 @@ jobs:
             image: "kindest/node:v1.33.12@sha256:3f5c8443c620245e4d355cfe09e96a91ead32ceaa569d3f1ca9edf0cb2fe2ff4"
           - version: "1.34"
             image: "kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a"
-    env:
-      # The one variable versions.env lets the environment win, so a matrix leg
-      # can pick its node image without the file being rewritten.
-      KIND_NODE_IMAGE: ${{ matrix.k8s.image }}
-    # A bounded ceiling above the platform's own: up.sh allows 900s per component
-    # and 900s to converge, and the demo adds a few minutes. If this job runs long
-    # it has hung, and a hung job should be killed rather than waited on.
-    timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.19.0
-      - name: install kind
-        run: |
-          version=0.33.0
-          curl -sSLo /usr/local/bin/kind \
-            "https://kind.sigs.k8s.io/dl/v${version}/kind-linux-amd64"
-          chmod +x /usr/local/bin/kind
-          kind --version
 
-      - name: what the runner is offering
+      # Creates the cluster from this repository's own kind config, so the two
+      # host port mappings the edge needs exist. up.sh finds it already present
+      # and reuses it -- that branch is in up.sh precisely so a cluster somebody
+      # else created is not silently recreated.
+      - name: create the kind cluster
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          config: cluster/kind.yaml
+          cluster_name: platform
+          node_image: ${{ matrix.k8s.image }}
+
+      - name: what the runner is offering, against what versions.env demands
         # up.sh refuses on CPU, memory and Docker's image store, and each refusal
         # names the setting. Printing the inputs first means a preflight failure
         # reads as a fact about the runner rather than a mystery.
+        #
+        # Known and not papered over: MIN_CPUS is 4 and a standard runner has 4,
+        # so the margin is ZERO -- a runner one core smaller would be refused
+        # rather than slow. RECOMMENDED_CPUS is 8 and will never be met here, so
+        # up.sh prints its under-recommended notice on every single run. That
+        # notice is correct and versions.env is not being edited to silence it.
         run: |
+          source versions.env
           docker system info --format \
             'NCPU={{.NCPU}}  MemTotal={{.MemTotal}}  Driver={{.Driver}}'
-          echo "MemTotal MiB: $(( $(docker system info --format '{{.MemTotal}}') / 1048576 ))"
-          echo "node image  : ${KIND_NODE_IMAGE}"
+          echo "MemTotal MiB : $(( $(docker system info --format '{{.MemTotal}}') / 1048576 ))"
+          echo "node image   : ${{ matrix.k8s.image }}"
+          echo "MIN_CPUS     : ${MIN_CPUS}   RECOMMENDED_CPUS: ${RECOMMENDED_CPUS}"
+          echo "MIN_MEMORY   : ${MIN_MEMORY_MIB} MiB   RECOMMENDED: ${RECOMMENDED_MEMORY_MIB} MiB"
+          echo "cpu margin   : $(( $(docker system info --format '{{.NCPU}}') - MIN_CPUS )) core(s) over MIN_CPUS"
 
-      # No sibling checkout, deliberately. This is the path a person cloning
-      # this repository actually takes, so it is the path CI has to prove: the
-      # fallback workload in bootstrap/fallback-workload is built and must reach
-      # Ready on the chart's own probes. A green run here means a stranger can
-      # clone and get a working platform.
-      - name: make up
-        run: make up
+      # make init fails closed when gitleaks is missing -- the pre-push gate does
+      # not skip, so neither does its installer. That is the correct behaviour
+      # and it means this job has to install gitleaks even though it never
+      # pushes anything. Version from versions.env, like every other tool here.
+      - name: install gitleaks, which make init requires
+        run: |
+          source versions.env
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${CI_GITLEAKS_VERSION}/gitleaks_${CI_GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: make init
+        run: make init
+
+      - name: make up -- ceiling derived from versions.env
+        # The ceiling is APP_TIMEOUT_SECONDS + UP_TIMEOUT_SECONDS plus ten
+        # minutes of slack for the cluster, Argo CD and the two image builds.
+        # up.sh is sequential and fail-closed: it stops at the FIRST component to
+        # blow its per-component deadline, so the longest it can run before
+        # failing is the components that succeed, plus one that hangs to
+        # APP_TIMEOUT, plus a convergence wait that hangs to UP_TIMEOUT. This
+        # bound follows from the file rather than from a guess about runners, and
+        # if it is ever hit the answer is to find out why, not to raise it.
+        run: |
+          source versions.env
+          ceiling=$(( APP_TIMEOUT_SECONDS + UP_TIMEOUT_SECONDS + 600 ))
+          echo "ceiling: ${ceiling}s (APP_TIMEOUT ${APP_TIMEOUT_SECONDS} + UP_TIMEOUT ${UP_TIMEOUT_SECONDS} + 600 slack)"
+          mkdir -p .ci-artifacts
+          timeout --signal=INT "$ceiling" make up 2>&1 | tee .ci-artifacts/make-up.log
+          exit "${PIPESTATUS[0]}"
 
       - name: make demo
-        run: make demo
+        run: |
+          source versions.env
+          timeout --signal=INT "$(( UP_TIMEOUT_SECONDS + 600 ))" \
+            make demo 2>&1 | tee .ci-artifacts/make-demo.log
+          exit "${PIPESTATUS[0]}"
 
-      - name: the result, for the log
+      - name: collect the applications table and the timings
         if: always()
         run: |
-          echo '### Applications' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          kubectl -n argocd get applications >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo '### Control plane restarts' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p .ci-artifacts
+          kubectl -n argocd get applications > .ci-artifacts/applications.txt 2>&1 || true
           kubectl -n kube-system get pods \
             -o custom-columns='NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount' \
-            >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+            > .ci-artifacts/control-plane-restarts.txt 2>&1 || true
+          grep -E 'is Ready \([0-9]+s\)|converged in' .ci-artifacts/make-up.log \
+            | sed 's/^ *//' > .ci-artifacts/timings.txt 2>/dev/null || true
+          {
+            echo '### Applications'
+            echo '```'; cat .ci-artifacts/applications.txt; echo '```'
+            echo '### Per-component timings'
+            echo '```'; cat .ci-artifacts/timings.txt; echo '```'
+            echo '### Control plane restarts'
+            echo '```'; cat .ci-artifacts/control-plane-restarts.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: bring-up-k8s-${{ matrix.k8s.version }}
+          path: .ci-artifacts/
+          retention-days: 30
 
       - name: diagnostics if it did not converge
         if: failure()
