@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="770" height="490" viewBox="0 0 770 490" role="img" aria-label="make demo-selfheal · deleted out of band, back in 5 seconds">
+<style>text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:13px;white-space:pre}</style>
+<rect width="770" height="490" rx="10" fill="#0d1117" stroke="#30363d"/>
+<path d="M0 10a10 10 0 0 1 10-10h750a10 10 0 0 1 10 10v28H0z" fill="#161b22"/>
+<line x1="0" y1="38" x2="770" y2="38" stroke="#30363d"/>
+<circle cx="20" cy="19" r="5.5" fill="#ff5f56"/>
+<circle cx="40" cy="19" r="5.5" fill="#ffbd2e"/>
+<circle cx="60" cy="19" r="5.5" fill="#27c93f"/>
+<text x="424.0" y="24" fill="#8b949e" text-anchor="middle" font-size="12">make demo-selfheal · deleted out of band, back in 5 seconds</text>
+<text x="22" y="67" fill="#58a6ff">$ make demo-selfheal</text>
+<text x="22" y="109" fill="#c9d1d9" font-weight="600">The claim</text>
+<text x="22" y="130" fill="#c9d1d9">  quote-api: selfHeal=true prune=true</text>
+<text x="22" y="151" fill="#c9d1d9">  every Application in platform/applications/ sets the same</text>
+<text x="22" y="172" fill="#c9d1d9" font-weight="600">Before</text>
+<text x="22" y="193" fill="#c9d1d9">  quote-api   2     2</text>
+<text x="22" y="214" fill="#c9d1d9">  uid c459c874-2919-4e2a-b33b-e7c3d83ba004</text>
+<text x="22" y="235" fill="#c9d1d9" font-weight="600">Deleting it out of band — no commit, no Argo CD involvement</text>
+<text x="22" y="256" fill="#c9d1d9">  deployment.apps &quot;quote-api&quot; deleted from tenant-quotes namespace</text>
+<text x="22" y="277" fill="#c9d1d9">  confirmed: Deployment/quote-api no longer exists</text>
+<text x="22" y="298" fill="#c9d1d9" font-weight="600">Waiting for Argo CD to notice and restore it</text>
+<text x="22" y="319" fill="#f85149">    0s  deployment=absent   ready=0/?  app=OutOfSync</text>
+<text x="22" y="340" fill="#3fb950">    5s  deployment=present  ready=2/2  app=Synced</text>
+<text x="22" y="361" fill="#c9d1d9" font-weight="600">After</text>
+<text x="22" y="382" fill="#c9d1d9">  quote-api   2     2</text>
+<text x="22" y="403" fill="#c9d1d9">  uid e1ae396a-9fa1-4d68-8af9-fa9599ccac70</text>
+<text x="22" y="424" fill="#3fb950">  the uid changed — this is a new object, rebuilt from Git, not the old one recovered</text>
+<text x="22" y="445" fill="#3fb950">  Nobody ran a sync. Nobody committed anything. Git was still the desired state.</text>
+</svg>

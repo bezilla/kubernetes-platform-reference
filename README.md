@@ -53,7 +53,7 @@ cd kubernetes-platform-reference
 
 make init     # installs the pre-push gate
 make up       # builds the entire platform — about 5 minutes
-make demo     # the four proofs below
+make demo     # the five proofs below
 ```
 
 ![make up: nine components installed one at a time, then ten Applications Synced and Healthy](docs/images/make-up.svg)
@@ -70,7 +70,9 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | `kube-controller-manager` / `kube-scheduler` restarts | **0** |
 | Offline policy suite | **42 tests, 0 excluded** |
 | Live admission demo | **6 refused, 1 admitted** |
-| Telemetry proof | **190 spans** |
+| Telemetry proof | **65 spans**, from a workload configured for none |
+| Deployment deleted out of band | **restored in 5s**, no sync run |
+| Kubernetes versions CI brings it up on | **1.32, 1.33, 1.34** |
 
 > **CI runs this same bring-up and these same demos on a clean runner**, with no
 > sibling repository present. The captures here are real output, and the claim
@@ -104,7 +106,7 @@ Every version is pinned in [`versions.env`](versions.env). The manifests cannot
 source a shell file, so each carries its version literally —
 `make check-versions` fails if the two ever disagree, and it runs in CI.
 
-### The guardrails, and the telemetry, proved
+### Guardrails, telemetry and self-healing, proved
 
 ![make demo-guardrails: six violations refused at admission, the compliant deploy admitted](docs/images/guardrails.svg)
 
@@ -113,10 +115,16 @@ Deployment with nothing broken admitted. Both directions, always, because a
 policy that matches everything and a policy that matches nothing look identical
 if you only check one.
 
-![make demo-telemetry: 190 spans arriving at a collector the app team never named](docs/images/telemetry.svg)
+![make demo-telemetry: spans arriving at a collector the app team never named](docs/images/telemetry.svg)
 
 The team's values file names no endpoint, no exporter and no collector. The
 spans arrive anyway.
+
+![make demo-selfheal: a Deployment deleted out of band and restored by Argo CD in five seconds](docs/images/selfheal.svg)
+
+Ten Applications set `selfHeal: true`. This deletes a Deployment out of band —
+no commit, no sync command, nothing nudged — and Argo CD puts it back. The uid
+changes, which is how you know it was rebuilt from Git rather than recovered.
 
 ---
 
