@@ -46,6 +46,22 @@ CA=.work/platform-ca.crt
 # The port the injector listens on inside the pod. Deliberately absent from
 # charts/paved-road/templates/service.yaml, which is the whole security
 # property; if this ever appears in a Service, this test is why it must not.
+#
+# UNVERIFIED, AND THE MORE LIKELY OF THE TWO TO BITE. This number is hardcoded
+# here while the deployment does not set it anywhere: apps/quote-api/values.yaml
+# writes no ADMIN_ADDR, so the container falls back to the `:8082` default in
+# the sibling repository's cmd/service/main.go. Two independent 8082s that agree
+# by coincidence, not by reference -- and nothing in this repository would notice
+# them diverging.
+#
+# So if anyone later pins ADMIN_ADDR in values.yaml to something else, or the
+# sibling changes its default, this constant goes stale silently and the open
+# half of the test stops testing the injector. It fails safe -- the port-forward
+# answers nothing and the script exits 3, "could not finish" -- but exit 3 does
+# not say "your constant is wrong", so read this first when it appears.
+#
+# Not fixed by editing values.yaml. Pinning it there is a real option and a
+# separate decision; a test is not the place to make it on someone's behalf.
 ADMIN_PORT=8082
 # The local end of the port-forward. Overridable because 8082 is a popular
 # number on a developer's machine and a collision here is a broken test run,
@@ -266,6 +282,21 @@ esac
 
 step "The open path: port-forward ${PF_PORT} -> ${DEPLOY}:${ADMIN_PORT}"
 
+# UNVERIFIED, AND THE LARGEST CLAIM IN THIS SCRIPT. The whole open half rests on
+# `kubectl port-forward` reaching a port that is NOT a declared containerPort:
+# apps/quote-api/values.yaml declares 8080 and 8081 and says nothing about 8082.
+#
+# The reasoning is that port-forward attaches to the pod's network namespace and
+# dials the port there, so a containerPort entry -- which is documentation for
+# humans and schedulers, not a firewall -- should not gate it. That is a reading
+# of how the mechanism works, not something this script's author watched happen
+# against a live cluster.
+#
+# If the reading is wrong, this fails to exit 3 and not to a false pass: nothing
+# answers on PF_PORT, the readiness loop below runs out its ceiling, and the
+# script reports "could not finish" with kubectl's own log. It cannot turn a
+# reachable injector into a green run. That asymmetry is why the claim was left
+# unverified rather than worked around.
 kubectl -n "$NS" port-forward "deploy/${DEPLOY}" "${PF_PORT}:${ADMIN_PORT}" \
 	>"$PF_LOG" 2>&1 &
 pf_pid=$!
