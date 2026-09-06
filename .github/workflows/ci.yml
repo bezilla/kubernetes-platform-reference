@@ -1,3 +1,10 @@
+# Everything `make check` runs, plus the two things it cannot: a real bring-up on
+# a real cluster, and a look at what this repository would ship.
+#
+# Actions are pinned by commit SHA, not by tag. versions.env argues that a tag is
+# a name and a digest is a fact, and pins the kind node image accordingly; a tag
+# here would be the same mutable reference the rest of the repository refuses.
+# The tag is kept in a trailing comment so the pin stays readable.
 name: CI
 
 on:
@@ -13,8 +20,8 @@ jobs:
     name: chart · manifests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           # Verified against both 3.19 and 4.2: the chart renders identically
           # under each, modulo blank lines, and values.schema.json is enforced
@@ -27,6 +34,10 @@ jobs:
           curl -sSL "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz" \
             | tar -xz -C /usr/local/bin kubeconform
           kubeconform -v
+      - name: prove recipes run with errexit and pipefail
+        # Guards the make 3.81 trap: .SHELLFLAGS is silently ignored there, so a
+        # failing step in a recipe can report success. Cheap, and it fails loudly.
+        run: make shell-check
       - name: helm lint, render, schema and manifest validation
         run: make lint
 
@@ -34,7 +45,7 @@ jobs:
     name: guardrails
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: install the kyverno CLI
         run: |
           # Pinned to the version the suite was verified against. The CLI's
@@ -56,7 +67,7 @@ jobs:
     name: identity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # The gate checks every commit, so it needs every commit. With the
           # default shallow clone it would check one and report success.
@@ -74,3 +85,136 @@ jobs:
         run: ./.githooks/pre-push --all-history
       - name: prove the gate still rejects bad history
         run: ./.githooks/selftest.sh
+
+  cluster:
+    name: bring-up · demo
+    runs-on: ubuntu-latest
+    # A bounded ceiling above the platform's own: up.sh allows 900s per component
+    # and 900s to converge, and the demo adds a few minutes. If this job runs long
+    # it has hung, and a hung job should be killed rather than waited on.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.19.0
+      - name: install kind
+        run: |
+          version=0.33.0
+          curl -sSLo /usr/local/bin/kind \
+            "https://kind.sigs.k8s.io/dl/v${version}/kind-linux-amd64"
+          chmod +x /usr/local/bin/kind
+          kind --version
+
+      - name: what the runner is offering
+        # up.sh refuses on CPU, memory and Docker's image store, and each refusal
+        # names the setting. Printing the inputs first means a preflight failure
+        # reads as a fact about the runner rather than a mystery.
+        run: |
+          docker system info --format \
+            'NCPU={{.NCPU}}  MemTotal={{.MemTotal}}  Driver={{.Driver}}'
+          echo "MemTotal MiB: $(( $(docker system info --format '{{.MemTotal}}') / 1048576 ))"
+
+      # No sibling checkout, deliberately. This is the path a person cloning
+      # this repository actually takes, so it is the path CI has to prove: the
+      # fallback workload in bootstrap/fallback-workload is built and must reach
+      # Ready on the chart's own probes. A green run here means a stranger can
+      # clone and get a working platform.
+      - name: make up
+        run: make up
+
+      - name: make demo
+        run: make demo
+
+      - name: the result, for the log
+        if: always()
+        run: |
+          echo '### Applications' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n argocd get applications >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Control plane restarts' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n kube-system get pods \
+            -o custom-columns='NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount' \
+            >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: diagnostics if it did not converge
+        if: failure()
+        run: |
+          kubectl -n argocd get applications -o wide || true
+          kubectl get pods -A || true
+          kubectl -n kube-system get pods || true
+          for app in $(kubectl -n argocd get applications -o name 2>/dev/null); do
+            echo "--- $app ---"
+            kubectl -n argocd get "$app" \
+              -o jsonpath='{.status.conditions[*].message}{"\n"}' || true
+          done
+
+  supply-chain:
+    name: supply chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: install trivy and syft
+        run: |
+          trivy_version=0.58.2
+          syft_version=1.19.0
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${trivy_version}/trivy_${trivy_version}_Linux-64bit.tar.gz" \
+            | tar -xz -C /usr/local/bin trivy
+          curl -sSL "https://github.com/anchore/syft/releases/download/v${syft_version}/syft_${syft_version}_linux_amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin syft
+          trivy --version
+          syft --version
+
+      - name: scan the tree for misconfiguration and secrets
+        # Secrets are a hard failure: the pre-push gate already refuses them, and
+        # a second opinion that only warns is not a second opinion.
+        run: |
+          trivy config --exit-code 1 --severity HIGH,CRITICAL .
+          trivy fs --scanners secret --exit-code 1 .
+
+      - name: build the two images this repository ships
+        run: |
+          # shellcheck disable=SC1091
+          source versions.env
+          docker build -q -t "${GIT_SERVER_IMAGE_REPO}:${GIT_SERVER_IMAGE_TAG}" bootstrap/git-server
+          docker build -q -t "${SAMPLE_IMAGE_REPO}:${SAMPLE_IMAGE_TAG}" \
+            --build-arg "BASE=${SAMPLE_IMAGE_FALLBACK}" bootstrap/fallback-workload
+          docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}' | grep platform.local
+
+      - name: scan both images
+        # Reported, not enforced. Both images are a pinned upstream base plus a
+        # config file, so a CRITICAL here is almost always an unfixed CVE in the
+        # base with no patched release to move to. Failing the build on that
+        # would mean the only way to green is to stop scanning. The report is in
+        # the job summary; the pin bump is Dependabot's job.
+        continue-on-error: true
+        run: |
+          source versions.env
+          for image in "${GIT_SERVER_IMAGE_REPO}:${GIT_SERVER_IMAGE_TAG}" \
+                       "${SAMPLE_IMAGE_REPO}:${SAMPLE_IMAGE_TAG}"; do
+            echo "### $image" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            trivy image --severity HIGH,CRITICAL --format table "$image" \
+              2>&1 | tail -40 >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: write an SBOM for each image
+        run: |
+          source versions.env
+          mkdir -p sbom
+          syft "${GIT_SERVER_IMAGE_REPO}:${GIT_SERVER_IMAGE_TAG}" \
+            -o spdx-json=sbom/git-server.spdx.json
+          syft "${SAMPLE_IMAGE_REPO}:${SAMPLE_IMAGE_TAG}" \
+            -o spdx-json=sbom/quote-api.spdx.json
+          ls -l sbom/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: sbom/
+          retention-days: 30
