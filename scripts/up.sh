@@ -114,6 +114,99 @@ EOF
 	exit 1
 fi
 
+# --- the total wall-clock ceiling ----------------------------------------------
+# APP_TIMEOUT_SECONDS bounds one component and wait-for-platform.sh bounds the
+# final settle. Nothing bounded their SUM. Ten components each finishing one
+# second inside a 900s per-app deadline is a bring-up of nearly three hours that
+# never trips a single check: every individual deadline is honoured and the
+# ceiling versions.env advertises is not enforced anywhere. UP_TIMEOUT_SECONDS
+# was the name of a limit on the last wait, not on the run.
+#
+# So: one watchdog over the whole script, at UP_TIMEOUT_SECONDS.
+#
+# WHAT IT DOES ON TIMEOUT. It dumps first and kills second, and the order is the
+# point. A bring-up killed silently at the ceiling tells you only that it was
+# slow, which is the one thing you already knew. What is needed is what it was
+# still waiting on and what the control plane looked like while it waited --
+# Application sync/health, every pod not Running or Completed, control-plane
+# restart counts, recent Warning events, and the node's own conditions. That is
+# the difference between "it timed out" and the leader-election collapse this
+# platform actually fails with.
+#
+# The dump goes to stderr AND to .work/up-timeout.log, because the terminal that
+# ran a three-hour bring-up is not reliably the terminal anyone reads afterwards.
+#
+# Exit 124, the GNU timeout convention, so a caller can tell "ran out of wall
+# clock" from "a component failed" without parsing output.
+UP_DEADLINE="${UP_TIMEOUT_SECONDS:-900}"
+UP_TIMEOUT_DUMP='.work/up-timeout.log'
+
+up_dump_state() {
+	mkdir -p .work
+	{
+		printf '\n=== up: WALL-CLOCK CEILING HIT after %ss (UP_TIMEOUT_SECONDS=%s) ===\n' \
+			"$1" "$UP_DEADLINE"
+		printf '\n--- Applications ---\n'
+		kubectl get applications -n argocd \
+			-o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' \
+			--request-timeout=20s 2>&1
+		printf '\n--- pods not Running/Completed, all namespaces ---\n'
+		kubectl get pods -A --request-timeout=20s 2>&1 \
+			| awk 'NR == 1 || ($4 != "Running" && $4 != "Completed")'
+		printf '\n--- control plane, with restart counts ---\n'
+		kubectl get pods -n kube-system \
+			-o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount' \
+			--request-timeout=20s 2>&1
+		printf '\n--- recent Warning events ---\n'
+		kubectl get events -A --field-selector type=Warning \
+			--sort-by=.lastTimestamp --request-timeout=20s 2>&1 | tail -25
+		printf '\n--- node conditions ---\n'
+		kubectl describe node "${KIND_CLUSTER_NAME}-control-plane" --request-timeout=20s 2>&1 \
+			| sed -n '/^Conditions:/,/^Addresses:/p'
+		printf '\n=== end of timeout dump ===\n'
+	} 2>&1 | tee -a "$UP_TIMEOUT_DUMP" >&2
+}
+
+up_main_pid=$$
+(
+	sleep "$UP_DEADLINE"
+	wd_self=$BASHPID
+	up_dump_state "$UP_DEADLINE"
+	printf '\nup: killing the bring-up at the %ss ceiling. State above and in %s\n' \
+		"$UP_DEADLINE" "$UP_TIMEOUT_DUMP" >&2
+	# Kill what the script is BLOCKED IN before signalling the script itself.
+	# bash defers a trap until the current foreground command returns, so TERMing
+	# the shell while it sits in `kubectl wait` does nothing until that wait ends
+	# on its own -- which, at the ceiling, is precisely what is not going to
+	# happen. The pending trap would then lose the race to the SIGKILL below and
+	# the run would die 137 with no exit code anyone can act on. Killing the
+	# descendant lets the foreground command return, the TERM handler runs, and
+	# the script exits 124 as documented.
+	for d in $(pgrep -P "$up_main_pid" 2>/dev/null); do
+		[ "$d" = "$wd_self" ] && continue
+		pkill -TERM -P "$d" 2>/dev/null || true
+		kill -TERM "$d" 2>/dev/null || true
+	done
+	kill -TERM "$up_main_pid" 2>/dev/null || true
+	# Last resort only. Reaching this means the TERM handler never ran.
+	sleep 15
+	kill -KILL "$up_main_pid" 2>/dev/null || true
+) &
+up_watchdog_pid=$!
+
+# The watchdog outlives a successful run unless something reaps it, and a leaked
+# `sleep 900` that later kills an unrelated process is a worse bug than the one
+# this fixes.
+up_cleanup() {
+	if [ -n "${up_watchdog_pid:-}" ]; then
+		kill "$up_watchdog_pid" 2>/dev/null || true
+		wait "$up_watchdog_pid" 2>/dev/null || true
+		up_watchdog_pid=''
+	fi
+}
+trap up_cleanup EXIT
+trap 'printf "\nup: terminated at the %ss wall-clock ceiling\n" "$UP_DEADLINE" >&2; exit 124' TERM
+
 # --- 1. the cluster -----------------------------------------------------------
 if kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; then
 	echo "up: cluster '${KIND_CLUSTER_NAME}' already exists; reusing it. 'make down' first for a clean run."
