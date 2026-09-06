@@ -273,13 +273,38 @@ jobs:
             --build-arg "BASE=${SAMPLE_IMAGE_FALLBACK}" bootstrap/fallback-workload
           docker images --format '  {{.Repository}}:{{.Tag}}  {{.Size}}' | grep platform.local
 
-      - name: scan both images
-        # Reported, not enforced. Both images are a pinned upstream base plus a
-        # config file, so a CRITICAL here is almost always an unfixed CVE in the
-        # base with no patched release to move to. Failing the build on that
-        # would mean the only way to green is to stop scanning. The report is in
-        # the job summary; the pin bump is Dependabot's job.
-        continue-on-error: true
+      - name: scan both images -- CRITICAL fails the build
+        # This was continue-on-error with a comment claiming a CRITICAL here
+        # would usually be an unfixed CVE with no patched release to move to.
+        # That was never measured, and it is wrong. Measured on 2026-09-06:
+        #
+        #   git-server   CRITICAL 0   HIGH  2   (libcrypto3, libssl3)
+        #   quote-api    CRITICAL 0   HIGH 33   (c-ares, curl, libcrypto3,
+        #                                        libcurl, libexpat, libssl3,
+        #                                        libuuid, libxml2)
+        #
+        # All 35 HIGH findings have a fixed version available. None of them is
+        # unfixable; the two pinned bases are simply behind.
+        #
+        # So CRITICAL is enforced -- it is 0 on both images today, which makes it
+        # a gate that holds rather than a gate that is switched off. HIGH is
+        # reported, and the blocker for raising the gate to HIGH is named rather
+        # than implied: 35 fixable findings from a digest-pinned Alpine
+        # (bootstrap/git-server/Dockerfile) and a tag-pinned nginx
+        # (versions.env SAMPLE_IMAGE_FALLBACK). Move those two pins and the gate
+        # can be raised. Dependabot reaches the first; the second is a build
+        # argument it cannot read, and is bumped by hand.
+        run: |
+          set -euo pipefail
+          source versions.env
+          for image in "${GIT_SERVER_IMAGE_REPO}:${GIT_SERVER_IMAGE_TAG}" \
+                       "${SAMPLE_IMAGE_REPO}:${SAMPLE_IMAGE_TAG}"; do
+            echo "::group::${image} CRITICAL gate"
+            trivy image --quiet --exit-code 1 --severity CRITICAL "$image"
+            echo "::endgroup::"
+          done
+
+      - name: report HIGH findings, which are not yet gated
         run: |
           source versions.env
           for image in "${GIT_SERVER_IMAGE_REPO}:${GIT_SERVER_IMAGE_TAG}" \
