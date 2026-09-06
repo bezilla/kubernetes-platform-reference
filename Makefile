@@ -55,11 +55,20 @@ wait: ## Block until every Application is Synced and Healthy (fails closed)
 # --- proving it works ---------------------------------------------------------
 
 .PHONY: demo
-demo: demo-https demo-guardrails demo-gitops demo-telemetry demo-selfheal ## All five proofs, in order
+demo: demo-https demo-isolation demo-guardrails demo-gitops demo-telemetry demo-selfheal ## All six proofs, in order
 
 .PHONY: demo-https
 demo-https: ## The sample app over HTTPS through Gateway API
 	@./scripts/demo-https.sh
+
+# Immediately after demo-https because it is the same edge, asked the opposite
+# question: that one proves what the route serves, this one proves what it does
+# not. It is the only demo target that is also a regression test -- it exits 1
+# when the boundary is broken, 2 when it could not run and 3 when it could not
+# finish, so a red run says which of the three happened.
+.PHONY: demo-isolation
+demo-isolation: ## The fault injector is unreachable through the gateway
+	@./scripts/demo-isolation.sh
 
 .PHONY: demo-guardrails
 demo-guardrails: ## Six violations rejected, the compliant deploy admitted

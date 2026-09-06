@@ -60,7 +60,7 @@ cd kubernetes-platform-reference
 
 make init     # installs the pre-push gate
 make up       # builds the entire platform — about 5 minutes
-make demo     # the five proofs below
+make demo     # the six proofs below
 ```
 
 ![make up: nine components installed one at a time, then ten Applications Synced and Healthy](docs/images/make-up.svg)

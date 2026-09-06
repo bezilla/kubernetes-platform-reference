@@ -46,7 +46,7 @@ git config user.email "bezilla@protonmail.com"
 ```sh
 make check     # everything CI runs that needs no cluster
 make up        # the whole platform on kind, about five minutes
-make demo      # the five proofs
+make demo      # the six proofs
 ```
 
 `make check` is `lint`, `check-versions`, `check-environments`, `policy-test`
