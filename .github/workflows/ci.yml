@@ -140,6 +140,15 @@ jobs:
             image: "kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # scripts/publish.sh pushes this working copy into the in-cluster
+          # Git server, and git refuses to push shallow history into another
+          # repository: "shallow update not allowed". actions/checkout defaults
+          # to fetch-depth: 1, so every bring-up here died at the publish step
+          # with the platform half-installed. Same reason the upgrade job sets
+          # it -- that one needs a real repository to build a commit with
+          # plumbing, this one needs one to push at all.
+          fetch-depth: 0
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.19.0
