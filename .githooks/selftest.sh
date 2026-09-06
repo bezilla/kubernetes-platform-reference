@@ -59,11 +59,35 @@ miss=0
 for t in "$TERM_ASSISTANT" "$TERM_VENDOR" "$TERM_TRAILER"; do
 	printf '%s\n' "$t" | grep -qiE "$pattern" || miss=$((miss + 1))
 done
-if [ "$miss" -eq 0 ]; then
-	ok 'runtime-built literals still match the hook pattern'
-else
+# The other direction, for the same reason the guardrail suites check both: a
+# pattern that matches everything and a pattern that matches nothing are
+# indistinguishable if you only ever watch it match.
+false_hit=0
+printf '%s\n' 'an ordinary commit message about ordinary work' | grep -qiE "$pattern" && false_hit=1
+if [ "$miss" -eq 0 ] && [ "$false_hit" -eq 0 ]; then
+	ok 'runtime-built literals match the hook pattern, and a clean string does not'
+elif [ "$miss" -ne 0 ]; then
 	bad "$miss runtime-built literal(s) no longer match the pattern -- the suite is testing nothing"
+else
+	bad 'the hook pattern matches a clean string -- it matches everything, so a pass proves nothing'
 fi
+
+# Reads a tree the way the hook does: blob by blob, through the system regex.
+# `git grep` is not used here for the reason recorded in DESIGN.md -- it can
+# match nothing, silently and successfully, and this check reads "no match" as
+# "the tip is clean", which would make case 6 assert its precondition wrongly.
+tree_has_term() {
+	local d="$1" rev="$2" entry meta _m blob_type blob_oid
+	while IFS= read -r -d '' entry; do
+		meta="${entry%%$'\t'*}"
+		read -r _m blob_type blob_oid <<<"$meta"
+		[ "${blob_type:-}" = 'blob' ] || continue
+		if git -C "$d" cat-file blob "${blob_oid:-}" 2>/dev/null | grep -qIiE "$pattern"; then
+			return 0
+		fi
+	done < <(git -C "$d" ls-tree -r -z "$rev")
+	return 1
+}
 
 # --- case 1: canonical identity passes ----------------------------------------
 d="$(new_repo)"
@@ -135,7 +159,7 @@ git -C "$d" commit -q -m 'Add a file that should not exist'
 git -C "$d" rm -q -- oops.txt
 git -C "$d" commit -q -m 'Remove it again'
 tip_clean=0
-git -C "$d" grep -qiE "$pattern" HEAD -- . 2>/dev/null || tip_clean=1
+tree_has_term "$d" HEAD || tip_clean=1
 rc="$(run_hook "$d" "$base")"
 if [ "$rc" != '0' ] && [ "$tip_clean" = '1' ]; then
 	ok 'forbidden term added then deleted in one range: rejected (tip tree was clean)'

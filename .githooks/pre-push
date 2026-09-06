@@ -15,7 +15,8 @@
 # POSIX extended regex [x] matches exactly x, so each pattern is literal while
 # this file's own bytes contain none of the terms it bans. That is what lets the
 # hook scan a tree that includes itself. Do not "simplify" the brackets away —
-# `make verify-pattern` fails if the patterns stop matching their literals.
+# the hook self-checks the pattern against known-hit and known-miss probes on
+# every run, and `make test-hook` case 0 checks it again from outside.
 #
 # Installed by `make init`, which sets core.hooksPath=.githooks. That setting is
 # per-clone and does NOT travel with a clone, so the same rules run server-side
@@ -35,12 +36,34 @@ CANONICAL="${CANONICAL_NAME} <${CANONICAL_EMAIL}>"
 # Bracketed so this file contains zero literal instances of the terms.
 FORBIDDEN='c[l]aude|anthrop[i]c|co-auth[o]red|cop[i]lot|chatg[p]t|open[a]i|gpt-[0-9]|generated[- ]with[- ]a[i]|a[i]-assisted|a[i]-generated'
 
+# Every scan in this file goes through this one function, reading stdin, so the
+# self-check below exercises the exact code that scans real history rather than
+# a lookalike. -I skips binary content, which is the same limit `git grep -I`
+# had here before: a forbidden term inside a binary blob is not caught.
+matches_forbidden() { grep -qIiE "$FORBIDDEN"; }
+
 ZERO='0000000000000000000000000000000000000000'
 
 fail() {
 	printf 'pre-push: %s\n' "$1" >&2
 	exit 1
 }
+
+# --- prove the scanner works before trusting it -------------------------------
+# A scanner is only evidence once it has been watched to match AND to not match.
+# One direction cannot tell a working pattern from one that matches everything,
+# nor from an engine that silently matches nothing -- and "nothing matched" is
+# precisely what a broken regex looks like from the outside: no output, exit 0,
+# no diagnostic. That is how a gate reports a clean history it never read.
+#
+# Both probes are built from octal escapes, so this file still contains no
+# literal forbidden term and can therefore scan itself.
+probe_hit="$(printf 'C\154aude')"
+probe_miss='an ordinary commit message about ordinary work'
+printf '%s\n' "$probe_hit" | matches_forbidden ||
+	fail 'scanner did not match a known-forbidden probe -- the pattern or the regex engine is broken, refusing to certify anything'
+printf '%s\n' "$probe_miss" | matches_forbidden &&
+	fail 'scanner matched a known-clean probe -- the pattern matches everything, so a pass means nothing'
 
 # --- collect the commits to check ---------------------------------------------
 # Two modes. In hook mode git feeds us one line per ref being pushed; ranges are
@@ -106,17 +129,42 @@ while read -r sha; do
 
 	# --- 2. attribution -------------------------------------------------------
 	# The whole message: subject, body and trailers.
-	if git show -s --format='%B' "$sha" | grep -qiE "$FORBIDDEN"; then
+	if git show -s --format='%B' "$sha" | matches_forbidden; then
 		fail "commit ${sha:0:12} message contains a forbidden attribution term"
 	fi
 
 	# The tree AS OF this commit, not just the final tree. A term that lands in
 	# one commit and is deleted by a later commit in the same push is still
 	# published history, and checking only the tip would miss it.
-	hits="$(git grep -ilE "$FORBIDDEN" "$sha" -- . 2>/dev/null || true)"
+	#
+	# Blobs are read out and piped to grep rather than scanned with `git grep`.
+	# git grep does not use the system regex engine: given a pattern it cannot
+	# honour -- \b and (?i) among them -- it matches NOTHING and says nothing,
+	# exiting 0. A gate that reads "no output" as "clean" then certifies every
+	# commit it was pointed at, and looks exactly like a gate that worked. The
+	# only defence is the self-check above plus a scanner whose semantics are
+	# the ones the pattern was written against. See DESIGN.md, "Scanning
+	# history is not grepping a checkout".
+	hits=''
+	while IFS= read -r -d '' entry; do
+		# `<mode> <type> <oid>` then a TAB then the path, which -z leaves
+		# unquoted so paths with spaces or quotes survive intact.
+		meta="${entry%%$'\t'*}"
+		# Not `path`: in zsh that name is tied to $PATH, and assigning to it
+		# empties the command search path. This hook runs under bash, where
+		# the name is harmless, but the same loop gets copied into shells
+		# where it is not.
+		blob_path="${entry#*$'\t'}"
+		read -r _mode blob_type blob_oid <<<"$meta"
+		[ "${blob_type:-}" = 'blob' ] || continue
+		if git cat-file blob "${blob_oid:-}" 2>/dev/null | matches_forbidden; then
+			hits="${hits}${blob_path}"$'\n'
+		fi
+	done < <(git ls-tree -r -z "$sha")
+
 	if [ -n "$hits" ]; then
 		printf 'pre-push: commit %s has forbidden terms in:\n' "${sha:0:12}" >&2
-		printf '%s\n' "$hits" | sed 's/^/  /' >&2
+		printf '%s' "$hits" | sed 's/^/  /' >&2
 		exit 1
 	fi
 done <<< "$commits"
