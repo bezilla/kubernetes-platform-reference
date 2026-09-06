@@ -73,6 +73,8 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | Telemetry proof | **65 spans**, from a workload configured for none |
 | Deployment deleted out of band | **restored in 5s**, no sync run |
 | Kubernetes versions CI brings it up on | **1.32, 1.33, 1.34** |
+| In-place upgrade from the previous chart versions | **converges in 31s** |
+| Environments rendered and guardrail-checked | **3 × 2 tenants, 21 assertions** |
 
 > **CI runs this same bring-up and these same demos on a clean runner**, with no
 > sibling repository present. The captures here are real output, and the claim
@@ -406,12 +408,19 @@ make policy-test    # every guardrail against fixtures, offline
 make demo-guardrails  # the same, through live admission control
 ```
 
-CI runs five jobs: chart and manifest validation, the policy suite in both
-directions, the identity and secrets gate over all history at `fetch-depth: 0`,
-a **full bring-up and demo on a clean runner**, and a supply-chain job that
-scans the tree and both built images and keeps an SPDX SBOM per image. Every
-action is pinned by commit SHA; Dependabot moves the pins and CI decides whether
-the move is safe.
+CI runs six jobs:
+
+| Job | What it does |
+|---|---|
+| `chart · manifests` | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
+| `guardrails` | the policy suite, both directions |
+| `identity` | the identity, attribution and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
+| `bring-up · demo` | the whole platform built and all five demos run — **on Kubernetes 1.32, 1.33 and 1.34**, on a clean runner, with no sibling repository present |
+| `upgrade in place` | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
+| `supply chain` | trivy over the tree and both built images, an SPDX SBOM kept per image |
+
+Every action is pinned by commit SHA. Dependabot moves the pins; the bring-up
+and upgrade jobs decide whether the move was safe.
 
 ---
 

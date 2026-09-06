@@ -181,6 +181,40 @@ jobs:
               -o jsonpath='{.status.conditions[*].message}{"\n"}' || true
           done
 
+  upgrade:
+    # The other cluster job builds from nothing, which proves the platform can be
+    # created. This proves it can be moved -- which is what every Dependabot pull
+    # request actually asks for, and where CRD migrations and webhook downtime
+    # show up. One version only: the upgrade path is orthogonal to the Kubernetes
+    # version, and three of these would cost half an hour to learn the same thing.
+    name: upgrade in place
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # upgrade-test.sh builds a commit with git plumbing, so it needs a
+          # real repository rather than a shallow one.
+          fetch-depth: 0
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.19.0
+      - name: install kind
+        run: |
+          version=0.33.0
+          curl -sSLo /usr/local/bin/kind \
+            "https://kind.sigs.k8s.io/dl/v${version}/kind-linux-amd64"
+          chmod +x /usr/local/bin/kind
+          kind --version
+      - name: git identity for the scratch commit
+        # commit-tree needs an author. The ref is deleted on exit and never
+        # published anywhere but the in-cluster mirror.
+        run: |
+          git config user.name  "Paul Bezilla"
+          git config user.email "bezilla@protonmail.com"
+      - name: install the previous versions, then upgrade to the pinned ones
+        run: make upgrade-test
+
   supply-chain:
     name: supply chain
     runs-on: ubuntu-latest
