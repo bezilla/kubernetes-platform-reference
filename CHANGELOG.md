@@ -6,6 +6,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The identity gate allowlists trailers instead of searching for vendor
+  names.** The old gate scanned every commit message and every tree in the push
+  range for a bracketed list of tool names; across the full history of all six
+  repositories in this family, 207 commits, that scan matched nothing. It is
+  replaced by an allowlist on the trailer block — `Signed-off-by` carrying
+  exactly `Paul Bezilla <bezilla@protonmail.com>`, `Verified` and `Measured`
+  carrying free text, every other key refused — so a tool that does not exist
+  yet is refused for being unlisted rather than surviving for being unknown.
+  Trailers are read with `git interpret-trailers --parse`, git's own definition,
+  because a `^Key:` regex would reject ordinary prose in all six repositories.
+- **Annotated tags are checked**, which nothing did before: the tagger must be
+  the canonical identity and the annotation body is subject to the same
+  allowlist.
+- **The self-test proves both directions**, thirteen cases including a permitted
+  sign-off accepted, a sign-off naming anyone else refused, `Verified` and
+  `Measured` accepted, an unlisted evidence key refused, and a mid-message
+  `Key: Value` line correctly not treated as a trailer. It captures the hook's
+  status with `|| rc=$?` rather than reading `$?` from a bare command, which is
+  silently fatal under the `bash -eo pipefail` CI runs steps with, and is
+  exercised under `-e`, under plain bash and through its shebang.
+
+### Removed
+
+- The scanner-calibration probes in the pre-push hook. They existed only to
+  certify the scan that was removed. The reasoning behind them is kept in
+  DESIGN.md, because it still governs how history is swept before publication.
+
+**History was not rewritten.** No force push, no retag. Every existing commit
+and tag is untouched; only the rule applied to new pushes changed. Both gates
+were run over all 64 commits from `6046540` first: old accepted 64 / rejected 0,
+new accepted 64 / rejected 0, disagreements 0.
+
+
 Nothing yet.
 
 ## 0.1.0 — 2026-09-05

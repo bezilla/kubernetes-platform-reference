@@ -440,7 +440,7 @@ four cores.
 |---|---|---|
 | `chart · manifests` | yes | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
 | `guardrails` | yes | the policy suite, both directions |
-| `identity` | yes | the identity, attribution and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
+| `identity` | yes | the identity, trailer and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
 | `bring-up · demo` | **no — 2 cores** | the whole platform built and all five demos run, no sibling repository present. Matrix: Kubernetes 1.32, 1.33, 1.34 |
 | `upgrade in place` | **no — 2 cores** | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
 | `supply chain` | yes | trivy over the tree and both built images, an SPDX SBOM kept per image |

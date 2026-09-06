@@ -60,7 +60,7 @@ a run.
 |-----|------------------|
 | `chart · manifests` | helm lint, render, values schema, kubeconform, every environment, `versions.env` against every Application, and `make shell-check` |
 | `guardrails` | the Kyverno suite, both directions |
-| `identity` | identity, attribution and secrets over all history at `fetch-depth: 0`, plus the gate's own self-test |
+| `identity` | identity, trailers and secrets over all history at `fetch-depth: 0`, plus the gate's own self-test |
 | `bring-up · demo` | the whole platform built and all five demos run, on a clean runner, on the fallback path |
 | `upgrade in place` | the previous chart versions installed, then upgraded to the pinned ones |
 | `supply chain` | trivy over the tree and both built images, an SPDX SBOM per image |
@@ -109,6 +109,49 @@ Two hard rules, both enforced by the pre-push gate over every commit in the push
 range and by the `identity` job over all history:
 
 - **One canonical identity**, author and committer, on every commit.
-- **No assistant or generated-by attribution** of any kind, in a commit message
-  or anywhere in the tree. `make test-hook` proves the gate still rejects each
-  thing it claims to reject.
+- **An allowlist on trailers.** Only three keys may appear in a commit's trailer
+  block, and every other key is refused:
+
+  | trailer | rule |
+  |---|---|
+  | `Signed-off-by` | must be exactly `Paul Bezilla <bezilla@protonmail.com>` |
+  | `Verified` | free text |
+  | `Measured` | free text |
+
+  This replaced a scan for a list of vendor and tool names. Any tool that stamps
+  provenance onto a commit does it through a trailer, so an unlisted key is
+  refused whether or not the gate has heard of the thing that wrote it — which a
+  list of names cannot do for a tool that ships next week.
+
+  `make test-hook` proves both directions: that the gate rejects each thing it
+  claims to, and that it accepts each thing it claims to.
+
+### The trailer rule has one sharp edge
+
+Whether a `Key: Value` line is a trailer depends on **which paragraph it lands
+in**. git parses only the last paragraph, and only when the whole paragraph
+parses as trailers. So:
+
+```
+Add a thing                          Add a thing
+
+Verified: 3 runs, 0 failures.        Verified: 3 runs, 0 failures.
+
+And a closing paragraph.             ← nothing after it
+```
+
+The left-hand message ends in prose, so `Verified:` there is **ordinary text**
+and the gate does not look at it. The right-hand message ends with that line, so
+it **is** a trailer and the key must be on the allowlist. The same words, the
+same spelling, two different outcomes decided by what comes after.
+
+This is deliberate — it is git's own definition, and it is the definition the
+tools that stamp provenance use, so it is the surface worth policing. A `^Key:`
+regex would be simpler and would reject ordinary prose: across the six
+repositories in this family there are 53 distinct `Key: Value` shapes that are
+*not* trailers, including `So:`, `why:`, `one:` and `docs:`.
+
+The practical consequence: if a push is refused for a trailer you thought was
+prose, look at whether it ended up in the final paragraph. And a new evidence
+word — `Tested:`, `Confirmed:` — needs adding to the allowlist before it can
+land in that position. That is the accepted cost of a tight list.

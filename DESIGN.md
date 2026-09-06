@@ -461,11 +461,86 @@ only ever watch it match. Calibration has to run through the *same code path*
 as the real scan -- a check that proves the pattern works under a different
 grep than the one doing the scanning proves nothing about the scan.
 
-`.githooks/pre-push` now does exactly this. Every scan goes through one
-`matches_forbidden()` function, the hook probes it in both directions on every
-invocation, and a probe that comes back wrong refuses the push rather than
-certifying it. `.githooks/selftest.sh` checks the same two directions from
-outside, and no longer reads a tree with `git grep` either.
+`.githooks/pre-push` did exactly this: every scan went through one
+`matches_forbidden()` function, the hook probed it in both directions on every
+invocation, and a probe that came back wrong refused the push rather than
+certifying it.
+
+**That scan has since been removed** — see the next section — and the
+calibration went with it, because it existed only to certify the scan. The
+lesson did not go anywhere. It is why the pre-public sweep of this repository
+extracts blobs and pipes them to the system regex instead of asking `git grep`,
+why every scan in that sweep is calibrated against a pattern known to be present
+before any zero from it is believed, and why a zero from an uncalibrated scanner
+is treated as no evidence at all rather than as good news.
+
+---
+
+## Why the identity gate allowlists trailers
+
+The gate used to search every commit message, and every tree in the push range,
+for a list of vendor and tool names written in bracket expressions so the file
+would not contain the strings it hunted for.
+
+Measured before removing it: across the full history of all six repositories in
+this family — 207 commits — that search matched **nothing**. Not "only its own
+rule text": zero in messages, zero in blobs, zero files flagged. It had never
+caught anything, and by construction it could only ever catch what somebody had
+already thought to write down.
+
+The replacement inverts the question. Any tool that stamps provenance onto a
+commit does it through a **trailer**, so the trailer block is the surface worth
+policing, and it is policed by allowlist:
+
+| trailer | rule |
+|---|---|
+| `Signed-off-by` | must be exactly `Paul Bezilla <bezilla@protonmail.com>` |
+| `Verified` | free text |
+| `Measured` | free text |
+| anything else | refused |
+
+An unlisted key is refused for being unlisted rather than surviving because
+nobody added it to a list. A denylist is stale the day a new tool ships; an
+allowlist is not. `Verified` and `Measured` are on the list because both are
+already in published history, at `bec588e` and `e2e801f`, recording evidence
+rather than authorship — and history is not rewritten to suit a new rule.
+
+### Trailers are read with git's parser, not a regex
+
+`git interpret-trailers --parse` defines a trailer as the last paragraph, and
+only when the whole paragraph parses as trailers. That is the same definition
+the tools stamping provenance use, which is what makes it the right surface.
+
+It also has an edge worth writing down, because it will surprise someone.
+**Whether a `Key: Value` line is a trailer depends on which paragraph it lands
+in.** `Verified: ...` followed by another paragraph is prose and the gate never
+looks at it; the same line as the final paragraph is a trailer and its key must
+be allowlisted. In this repository's own history `Verified` appears twice as
+prose and once as a trailer, and `Measured` once each way.
+
+A `^[A-Z][A-Za-z-]*:` regex would be simpler and wrong. Across the six
+repositories there are **53 distinct `Key: Value` shapes that git does not treat
+as trailers**, including `So:`, `why:`, `one:`, `docs:`, `chore:` and `ci:` —
+ordinary English and ordinary prefixes. A regex gate would have rejected commits
+in every one of the six on the day it shipped.
+
+### What did not change, and what was not rewritten
+
+Identity is untouched: author and committer must both be the one canonical
+identity, checked per commit. `collect_commits` is byte-identical. Scope is
+still `refs/heads` and `refs/tags` and deliberately not `refs/remotes` or
+`refs/pull`. gitleaks still runs over history and still fails closed.
+
+Annotated tags are checked now, which nothing did before — the tagger must be
+the canonical identity and the annotation body goes through the same allowlist,
+because otherwise a tag is a place to put a trailer the commit gate refused.
+
+**History was not rewritten.** No force push, no retag, nothing dropped. Every
+commit and tag that existed before this change exists unchanged after it; only
+the rule applied to new pushes is different. Both gates were run over all 64
+commits reachable from `6046540` before the change landed: the old gate accepted
+64 and rejected 0, the new gate accepted 64 and rejected 0, and the count of
+commits the old gate accepts and the new one refuses is **0**.
 
 ---
 
