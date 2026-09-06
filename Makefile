@@ -51,7 +51,7 @@ wait: ## Block until every Application is Synced and Healthy (fails closed)
 # --- proving it works ---------------------------------------------------------
 
 .PHONY: demo
-demo: demo-https demo-guardrails demo-gitops ## All three proofs, in order
+demo: demo-https demo-guardrails demo-gitops demo-telemetry ## All four proofs, in order
 
 .PHONY: demo-https
 demo-https: ## The sample app over HTTPS through Gateway API
@@ -64,6 +64,10 @@ demo-guardrails: ## Six violations rejected, the compliant deploy admitted
 .PHONY: demo-gitops
 demo-gitops: ## Commit a replica change and watch Argo CD apply it
 	@./scripts/demo-gitops.sh
+
+.PHONY: demo-telemetry
+demo-telemetry: ## Spans arriving at a collector the app team never named
+	@./scripts/demo-telemetry.sh
 
 # --- checks that need no cluster ----------------------------------------------
 
