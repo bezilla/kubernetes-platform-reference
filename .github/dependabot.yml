@@ -1,0 +1,43 @@
+# Pins do not maintain themselves, and a repository whose whole argument is
+# "everything is pinned" has to answer how the pins move. This is that answer:
+# Dependabot proposes the bump, CI decides whether it is safe.
+#
+# Two ecosystems, because those are the two this repository actually has.
+# The Helm chart versions in versions.env are not covered -- Dependabot has no
+# updater for a shell file, and `make check-versions` is what keeps those honest
+# against the Application manifests. Moving them is still a manual read of the
+# upstream changelog, which for a control-plane component it should be.
+version: 2
+
+updates:
+  # The workflow pins every action by commit SHA, which is exactly the case
+  # Dependabot is for: a human cannot eyeball whether a 40-character hex string
+  # is current, and a tag that moves under you is the thing the pin exists to
+  # prevent. Dependabot rewrites the SHA and the trailing version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    labels: [dependencies, ci]
+    open-pull-requests-limit: 5
+
+  # bootstrap/git-server pins Alpine by digest. A digest is immutable, which is
+  # the point and also the problem: it never picks up a security release on its
+  # own, so something has to notice when the tag has moved past it.
+  - package-ecosystem: docker
+    directory: /bootstrap/git-server
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: deps
+    labels: [dependencies, security]
+    open-pull-requests-limit: 5
+
+  # bootstrap/fallback-workload takes its base as a build argument so that
+  # versions.env stays the single source of truth for the pin. That means
+  # Dependabot cannot read it -- there is no FROM line naming an image. Recorded
+  # here rather than left as a silent gap: SAMPLE_IMAGE_FALLBACK in versions.env
+  # is bumped by hand, and the supply-chain job's trivy report is what surfaces
+  # when it needs bumping.
