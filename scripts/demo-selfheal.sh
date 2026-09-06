@@ -3,8 +3,8 @@
 # selfHeal, shown rather than asserted.
 #
 # Every Application in this repository sets `syncPolicy.automated.selfHeal:
-# true`. That is nine files making one claim, and until this script existed
-# nothing checked it. An unexercised claim in nine places is not nine times more
+# true`. That is ten files making one claim, and until this script existed
+# nothing checked it. An unexercised claim in ten places is not ten times more
 # true than an unexercised claim in one.
 #
 # So: delete a Deployment the platform owns, out of band, the way a tired

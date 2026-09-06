@@ -1,0 +1,32 @@
+# Wave 7: the second tenant, and the point of having one.
+#
+# Compare this file to 40-quote-api.yaml. The name, the namespace and the values
+# path differ; nothing else does -- and this one does not carry the HTTPRoute
+# ignoreDifferences block, because invoice-worker sets ingress.enabled: false
+# and the chart therefore renders no route to defend against defaulting.
+#
+# That is what a working abstraction looks like from the outside: the second
+# service was a values file, and the Application around it is boilerplate that
+# would read the same for the tenth.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: invoice-worker
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "7"}
+spec:
+  project: default
+  source:
+    repoURL: http://git-server.platform-system.svc/git/platform.git
+    targetRevision: main
+    path: charts/paved-road
+    helm:
+      releaseName: invoice-worker
+      valueFiles: [../../apps/invoice-worker/values.yaml]
+  destination: {server: https://kubernetes.default.svc, namespace: tenant-billing}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [ServerSideApply=true]
+    retry:
+      limit: 8
+      backoff: {duration: 10s, factor: 2, maxDuration: 2m}

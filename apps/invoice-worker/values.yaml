@@ -1,0 +1,45 @@
+# invoice-worker, on the same paved road as quote-api.
+#
+# This file exists to answer a question the first tenant cannot: is
+# charts/paved-road an interface, or is it a template with one caller? A second
+# service only proves something if it is genuinely different, so this one is:
+#
+#   - it is not published to the internet at all (ingress.enabled: false), so no
+#     HTTPRoute is rendered and no hostname is claimed
+#   - it runs a single replica, so the chart renders no PodDisruptionBudget --
+#     a budget over one pod is a promise the scheduler cannot keep
+#   - a different resource tier, a different team, different labels
+#
+# Everything else it receives is identical to quote-api's, and neither team
+# wrote a line of it.
+owner:
+  team: billing
+  contact: billing@example.com
+  description: Reconciles invoices against settled payments. Internal only.
+
+image:
+  repository: platform.local/quote-api
+  tag: "0.1.0"
+  # The same image as the other tenant, deliberately. What differs here is the
+  # values file, which is the thing under test -- building a second image would
+  # prove the platform can run two images, which was never in doubt.
+  pullPolicy: Never
+
+replicas: 1
+
+port: 8080
+
+resources:
+  tier: small          # quote-api is nano; the tier map is the only difference
+
+health:
+  path: /healthz
+
+# Not on the internet. The Gateway, the certificate and the edge are all still
+# there; this service simply does not ask for them, and gets a ClusterIP and
+# nothing else.
+ingress:
+  enabled: false
+
+env:
+  API_ADDR: ":8080"

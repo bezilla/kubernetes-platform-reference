@@ -281,7 +281,7 @@ custom resource, so anything CRD-shaped drifts forever.
 
 **Why this is worth fixing rather than tolerating.** `OutOfSync` is the one
 signal that means the cluster no longer matches Git. A dashboard where four of
-nine Applications are permanently amber is a dashboard where nobody notices the
+ten Applications are permanently amber is a dashboard where nobody notices the
 fifth. Being able to say "everything is Synced" is the entire value of the
 column.
 

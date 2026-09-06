@@ -26,3 +26,15 @@ metadata:
     app.kubernetes.io/part-of: platform
     platform.internal/paved-road: "true"
     platform.internal/team: payments
+---
+# A second tenant, owned by a different team. The label is identical because the
+# contract is identical -- onboarding the second team was this block and a values
+# file, which is the claim the first tenant alone could not test.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-billing
+  labels:
+    app.kubernetes.io/part-of: platform
+    platform.internal/paved-road: "true"
+    platform.internal/team: billing

@@ -21,7 +21,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source versions.env
 
 DEADLINE_SECONDS="${1:-900}"
-EXPECTED="${EXPECTED_APPS:-9}"
+EXPECTED="${EXPECTED_APPS:-10}"
 INTERVAL=15
 
 start=$SECONDS

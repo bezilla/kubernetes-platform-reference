@@ -56,17 +56,17 @@ make up       # builds the entire platform — about 5 minutes
 make demo     # the four proofs below
 ```
 
-![make up: eight components installed one at a time, then nine Applications Synced and Healthy](docs/images/make-up.svg)
+![make up: nine components installed one at a time, then ten Applications Synced and Healthy](docs/images/make-up.svg)
 
 `make up` creates the cluster, installs Argo CD, starts an in-cluster Git
 server, builds the workload image, publishes the repository to that server,
-installs eight components **one at a time**, and blocks until all nine
+installs nine components **one at a time**, and blocks until all ten
 Applications are Synced and Healthy. It exits non-zero if anything is not.
 
 | | |
 |---|---|
-| Time to nine Applications Synced and Healthy | **~5 minutes** on 8 cores |
-| Eight components, installed serially | **171s** |
+| Time to ten Applications Synced and Healthy | **~5 minutes** on 8 cores |
+| Nine components, installed serially | **~3 minutes** |
 | `kube-controller-manager` / `kube-scheduler` restarts | **0** |
 | Offline policy suite | **42 tests, 0 excluded** |
 | Live admission demo | **6 refused, 1 admitted** |
@@ -80,10 +80,10 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 
 ## What you get
 
-![The Argo CD app-of-apps tree: one root Application applied by hand, eight children it produces in sync-wave order, and what a tenant receives from them](docs/images/app-of-apps.svg)
+![The Argo CD app-of-apps tree: one root Application applied by hand, nine children it produces in sync-wave order, and what a tenant receives from them](docs/images/app-of-apps.svg)
 
 *One reconciler and one hand-applied Application. `platform-root` produces the
-other eight in sync-wave order — four from upstream Helm charts, four from paths
+other nine in sync-wave order — four from upstream Helm charts, four from paths
 in this repository. Adding a platform component is a file and a commit, never
 `helm install`.*
 
@@ -96,7 +96,8 @@ in this repository. Adding a platform component is a file and a commit, never
 | **platform-config** | this repo · `platform/config/edge` | Namespaces, the root CA, the shared Gateway, the NodePort that publishes it |
 | **guardrails** | this repo · `platform/config/guardrails` | Four `ClusterPolicy` objects in `Enforce`, scoped to tenant namespaces |
 | **otel-collector** | Helm · open-telemetry `0.172.0` | The OTLP endpoint every workload is wired to without asking |
-| **quote-api** | this repo · `charts/paved-road` | One tenant on the paved road, from a twenty-line values file |
+| **quote-api** | this repo · `charts/paved-road` | A tenant on the paved road: published on HTTPS, three replicas, a PodDisruptionBudget |
+| **invoice-worker** | this repo · `charts/paved-road` | A second tenant, same chart, different answers: no ingress, one replica, no PDB |
 | **platform-root** | this repo · `platform/applications` | The app-of-apps root — the only `kubectl apply` in the bring-up |
 
 Every version is pinned in [`versions.env`](versions.env). The manifests cannot
