@@ -73,10 +73,13 @@ if [ ! -s "$CA" ]; then
 fi
 codes=''
 for _ in $(seq 1 "$REQUESTS"); do
+	# No `|| echo '000'` here: -w '%{http_code}' makes curl print 000 itself on a
+	# connection failure and THEN exit non-zero, so the fallback appends a second
+	# one and the line reports 000000. The default belongs on the expansion.
 	c="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
 		--cacert "$CA" --resolve "${HOST}:${EDGE_HTTPS_PORT}:127.0.0.1" \
-		"https://${HOST}:${EDGE_HTTPS_PORT}/api/quote?sku=SKU-1" 2>/dev/null || echo '000')"
-	codes="${codes}${c} "
+		"https://${HOST}:${EDGE_HTTPS_PORT}/api/quote?sku=SKU-1" 2>/dev/null)"
+	codes="${codes}${c:-000} "
 done
 printf '  responses: %s\n' "$codes"
 
