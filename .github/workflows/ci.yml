@@ -92,8 +92,26 @@ jobs:
         run: ./.githooks/selftest.sh
 
   cluster:
-    name: bring-up · demo
+    # The whole platform, brought up on three Kubernetes versions. versions.env
+    # says the charts support up to 1.34; running only 1.34 makes that half a
+    # claim. fail-fast is off because "1.32 broke and 1.33 was cancelled" is
+    # strictly less useful than knowing about both.
+    name: bring-up · demo · k8s ${{ matrix.k8s.version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s:
+          - version: "1.32"
+            image: "kindest/node:v1.32.11@sha256:5fc52d52a7b9574015299724bd68f183702956aa4a2116ae75a63cb574b35af8"
+          - version: "1.33"
+            image: "kindest/node:v1.33.12@sha256:3f5c8443c620245e4d355cfe09e96a91ead32ceaa569d3f1ca9edf0cb2fe2ff4"
+          - version: "1.34"
+            image: "kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a"
+    env:
+      # The one variable versions.env lets the environment win, so a matrix leg
+      # can pick its node image without the file being rewritten.
+      KIND_NODE_IMAGE: ${{ matrix.k8s.image }}
     # A bounded ceiling above the platform's own: up.sh allows 900s per component
     # and 900s to converge, and the demo adds a few minutes. If this job runs long
     # it has hung, and a hung job should be killed rather than waited on.
@@ -119,6 +137,7 @@ jobs:
           docker system info --format \
             'NCPU={{.NCPU}}  MemTotal={{.MemTotal}}  Driver={{.Driver}}'
           echo "MemTotal MiB: $(( $(docker system info --format '{{.MemTotal}}') / 1048576 ))"
+          echo "node image  : ${KIND_NODE_IMAGE}"
 
       # No sibling checkout, deliberately. This is the path a person cloning
       # this repository actually takes, so it is the path CI has to prove: the
