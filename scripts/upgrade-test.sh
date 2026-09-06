@@ -45,18 +45,54 @@ step "Building a commit pinned to the previous chart versions"
 # See the note in scripts/demo-gitops.sh: `mktemp -t NAME` is a BSD prefix and a
 # GNU template, and GNU rejects it for having too few X's. This form works on
 # both.
-tmp_index="$(mktemp "${TMPDIR:-/tmp}/upgrade-index.XXXXXX")"
-GIT_INDEX_FILE="$tmp_index" git read-tree HEAD
+# Every step below is checked. This script runs under `set -uo pipefail` and
+# deliberately NOT under -e, so without these guards a failure here does not stop
+# it -- it carries on and publishes whatever it ended up with.
+#
+# That is not hypothetical. When mktemp failed on GNU, tmp_index was empty,
+# GIT_INDEX_FILE="" made read-tree "fatal: unable to write new index file", all
+# four update-index calls said "cannot add", and `git write-tree` then wrote the
+# EMPTY TREE (4b825dc642cb6eb9a060e54bf8d69288fbee4904). That tree was committed
+# and published as main, so every path in the repository was missing at once and
+# Argo CD reported the first one it wanted: "platform/config/argocd: app path
+# does not exist". Seven fatal messages scrolled past and the script kept going.
+#
+# The empty-tree check at the end is the backstop that names the real fault
+# instead of letting it surface three minutes later as a missing directory.
+tmp_index="$(mktemp "${TMPDIR:-/tmp}/upgrade-index.XXXXXX")" \
+	|| { echo "upgrade-test: could not create a temporary index" >&2; exit 1; }
+GIT_INDEX_FILE="$tmp_index" git read-tree HEAD \
+	|| { echo "upgrade-test: could not read HEAD into the temporary index" >&2; exit 1; }
 for pair in "${PAIRS[@]}"; do
 	IFS=':' read -r manifest curvar prevvar <<<"$pair"
 	cur="${!curvar}"; prev="${!prevvar}"
 	blob="$(git show "HEAD:${manifest}" \
 		| sed "s|^\([[:space:]]*targetRevision:[[:space:]]*\)${cur}[[:space:]]*$|\1${prev}|" \
-		| git hash-object -w --stdin)"
-	GIT_INDEX_FILE="$tmp_index" git update-index --cacheinfo "100644,${blob},${manifest}"
+		| git hash-object -w --stdin)" \
+		|| { echo "upgrade-test: could not rewrite ${manifest}" >&2; exit 1; }
+	GIT_INDEX_FILE="$tmp_index" git update-index --cacheinfo "100644,${blob},${manifest}" \
+		|| { echo "upgrade-test: could not stage ${manifest}" >&2; exit 1; }
 	printf '    %-46s %s -> %s\n' "$(basename "$manifest")" "$cur" "$prev"
 done
-tree="$(GIT_INDEX_FILE="$tmp_index" git write-tree)"
+tree="$(GIT_INDEX_FILE="$tmp_index" git write-tree)" \
+	|| { echo "upgrade-test: could not write the tree" >&2; exit 1; }
+
+# Refuse to publish nothing. An empty tree is what a broken index produces, and
+# it fails far away from here as "app path does not exist" on whichever path Argo
+# CD happens to want first.
+if [ "$tree" = "$(git hash-object -t tree /dev/null)" ]; then
+	cat >&2 <<EOF
+upgrade-test: the previous-version tree came out EMPTY.
+
+    Nothing was staged, so this would publish a commit containing no files and
+    every Application would fail with "app path does not exist" on a path that
+    is present in HEAD. Refusing to publish it.
+
+    Check the git errors above -- the usual cause is a temporary index that was
+    never created.
+EOF
+	exit 1
+fi
 commit="$(git commit-tree "$tree" -p HEAD -m "Pin the previous chart versions
 
 Built by scripts/upgrade-test.sh. Never on a branch anyone works on.")"
