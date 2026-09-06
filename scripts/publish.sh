@@ -16,7 +16,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # shellcheck disable=SC1091
 source versions.env
 
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+# Normally the branch that is checked out. PUBLISH_REF overrides it so a
+# caller can publish a ref it built without checking it out -- demo-gitops
+# uses that to keep its commit off the branch you are working on.
+BRANCH="${PUBLISH_REF:-$(git rev-parse --abbrev-ref HEAD)}"
+git rev-parse --verify --quiet "refs/heads/${BRANCH}" >/dev/null ||
+	{ echo "publish: no such branch: ${BRANCH}" >&2; exit 1; }
 MIRROR='.work/platform.git'
 NS='platform-system'
 
@@ -60,7 +65,7 @@ kubectl -n "$NS" exec "$pod" -- sh -c 'rm -rf /srv/git/platform.git && mkdir -p 
 # archive itself. COPYFILE_DISABLE tells tar not to write them.
 COPYFILE_DISABLE=1 tar -C "$MIRROR" -cf - . | kubectl -n "$NS" exec -i "$pod" -- tar -C /srv/git/platform.git -xf -
 
-sha="$(git rev-parse --short HEAD)"
+sha="$(git rev-parse --short "refs/heads/${BRANCH}")"
 echo "publish: ${BRANCH} @ ${sha} -> http://git-server.${NS}.svc/git/platform.git"
 
 # Argo polls every three minutes by default. Nudge it so the demonstration does
