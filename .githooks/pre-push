@@ -201,8 +201,14 @@ if [ -n "$tags" ]; then
 		[ "$tagger" = "$CANONICAL" ] ||
 			fail "tag ${ref#refs/tags/} tagger is '${tagger}', expected '${CANONICAL}'"
 
-		# Everything after the header's blank line is the annotation body.
-		check_trailers "tag ${ref#refs/tags/}" "$(printf '%s\n' "$raw" | sed '1,/^$/d')" || exit 1
+		# The annotation body is everything after the header's blank line, minus
+		# any signature. A signed tag appends its signature block straight after
+		# the message with no blank line between -- so the last paragraph becomes
+		# message-plus-signature, which does not parse as trailers and would make
+		# this check silently pass on every signed tag. Strip the signature, then
+		# parse.
+		body="$(printf '%s\n' "$raw" | sed '1,/^$/d' | sed '/^-----BEGIN .*SIGNATURE-----$/,$d')"
+		check_trailers "tag ${ref#refs/tags/}" "$body" || exit 1
 	done <<< "$tags"
 fi
 
