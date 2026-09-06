@@ -271,13 +271,22 @@ jobs:
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.19.0
+      # Same treatment the bring-up job gets. The previous curl install wrote to
+      # /usr/local/bin and then failed on `chmod: Operation not permitted`,
+      # because the runner image already carries a root-owned kind there. The
+      # action does not fight the image for that path.
+      #
+      # upgrade-test.sh calls `make up` itself, which creates its own cluster --
+      # so this one is created and immediately torn down. It is here for the kind
+      # BINARY, which up.sh needs on PATH, and the cluster is the action's own
+      # unavoidable side effect.
       - name: install kind
-        run: |
-          version=0.33.0
-          curl -sSLo /usr/local/bin/kind \
-            "https://kind.sigs.k8s.io/dl/v${version}/kind-linux-amd64"
-          chmod +x /usr/local/bin/kind
-          kind --version
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          cluster_name: upgrade-test-bootstrap
+      - name: remove the bootstrap cluster, so make up builds its own
+        run: kind delete cluster --name upgrade-test-bootstrap
+
       - name: git identity for the scratch commit
         # commit-tree needs an author. The ref is deleted on exit and never
         # published anywhere but the in-cluster mirror.
