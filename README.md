@@ -62,6 +62,7 @@ The spans arrive anyway.
 | kubectl, [helm](https://helm.sh), git | |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | only for `make init`; the pre-push gate fails closed without it |
 | [kubeconform](https://github.com/yannh/kubeconform) | only for `make lint`, which skips manifest validation with a count when it is absent rather than failing |
+| [kyverno CLI](https://github.com/kyverno/kyverno) | only for `make policy-test`, which fails closed without it — a policy suite that quietly does not run is how a policy matching everything reaches production |
 
 > **Turn off Docker's containerd image store.** Docker Desktop enables it by
 > default and reports its driver as `overlayfs` rather than `overlay2`. Under
