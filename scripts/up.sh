@@ -76,6 +76,44 @@ if [ "$ncpu" -lt "$RECOMMENDED_CPUS" ] || [ "$mem_mib" -lt "$RECOMMENDED_MEMORY_
 	printf 'up: the staged install below is what makes this size viable; expect it to be slow.\n\n' >&2
 fi
 
+# Docker's image store. Docker Desktop 4.89 enables the containerd snapshotter
+# by default, and it reports itself as Driver "overlayfs" rather than the
+# classic "overlay2". Under it, pulling a multi-architecture reference stores an
+# OCI index whose non-host manifests are referenced but whose blobs are not
+# fetched. `kind load docker-image` imports with --all-platforms, walks those
+# manifests, and dies on the first digest that was never pulled:
+#
+#   ctr: content digest sha256:8059...: not found
+#
+# It fails at step 4, several minutes in, on a machine that has already built a
+# cluster and installed Argo CD -- and it fails only for PULLED images, so an
+# image built locally loads fine and the cause looks like kind rather than
+# Docker. Refuse up front and name the setting.
+driver="$(docker system info --format '{{.Driver}}' 2>/dev/null || echo 'unknown')"
+if [ "$driver" != 'overlay2' ]; then
+	cat >&2 <<EOF
+up: Docker's image store is "${driver}", not "overlay2".
+
+    This is Docker Desktop's containerd image store. With it enabled, a
+    multi-architecture image is stored as an index whose other platforms are
+    referenced but not pulled, and \`kind load docker-image\` -- which imports
+    with --all-platforms -- fails on the missing blob:
+
+      ctr: content digest sha256:...: not found
+
+    The failure lands minutes into \`make up\`, after the cluster and Argo CD
+    are already installed, and only for images that were pulled rather than
+    built, so it reads as a kind bug and is not one.
+
+    Fix: Docker Desktop -> Settings -> General, and turn OFF
+    "Use containerd for pulling and storing images". Then restart Docker and
+    confirm with:
+
+      docker system info --format '{{.Driver}}'      # expect: overlay2
+EOF
+	exit 1
+fi
+
 # --- 1. the cluster -----------------------------------------------------------
 if kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; then
 	echo "up: cluster '${KIND_CLUSTER_NAME}' already exists; reusing it. 'make down' first for a clean run."

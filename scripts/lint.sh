@@ -22,8 +22,31 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 fail=0
-ok()  { printf '  \033[32mok\033[0m   %s\n' "$1"; }
-bad() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=$((fail + 1)); }
+skip=0
+ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; }
+bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=$((fail + 1)); }
+skipped() { printf '  \033[33mskip\033[0m %s\n' "$1"; skip=$((skip + 1)); }
+
+# kubeconform is a lint dependency, not a bring-up dependency, so its absence is
+# checked here rather than in up.sh's preflight: gating a cluster bring-up on a
+# tool the bring-up never invokes would refuse a machine that is perfectly able
+# to run the platform.
+#
+# Absent, it is reported as SKIPPED with a count, never as passed. A check that
+# did not run is not a check that succeeded, and the previous behaviour -- 29
+# separate "does not validate" failures, every one of them the shell reporting
+# "kubeconform: command not found" -- said the manifests were broken when what
+# was missing was the validator.
+#
+# In CI it is still a hard failure. The workflow pins CI_KUBECONFORM_VERSION and
+# installs it, so absence there means the workflow is broken, not the machine.
+have_kubeconform=1
+command -v kubeconform >/dev/null 2>&1 || have_kubeconform=0
+if [ "$have_kubeconform" -eq 0 ] && [ -n "${CI:-}" ]; then
+	printf '\nlint: kubeconform is not on PATH and CI is set.\n' >&2
+	printf 'lint: CI pins CI_KUBECONFORM_VERSION and must install it; this is a broken workflow.\n\n' >&2
+	exit 1
+fi
 
 printf '\n== helm lint\n'
 if helm lint charts/paved-road --values apps/quote-api/values.yaml >/dev/null 2>&1; then
@@ -37,7 +60,9 @@ printf '\n== helm template\n'
 if out="$(helm template quote-api charts/paved-road --values apps/quote-api/values.yaml \
 		--namespace tenant-quotes 2>&1)"; then
 	ok 'chart renders'
-	if printf '%s' "$out" | kubeconform -strict -ignore-missing-schemas -summary >/dev/null 2>&1; then
+	if [ "$have_kubeconform" -eq 0 ]; then
+		skipped 'rendered output NOT validated: kubeconform is not on PATH'
+	elif printf '%s' "$out" | kubeconform -strict -ignore-missing-schemas -summary >/dev/null 2>&1; then
 		ok 'rendered output validates'
 	else
 		bad 'rendered output does not validate'
@@ -69,18 +94,25 @@ done
 
 printf '\n== manifests validate\n'
 before=$fail
+manifests=0
 for f in bootstrap/*.yaml platform/applications/*.yaml platform/config/*/*.yaml tests/guardrails/*.yaml; do
 	# Two deliberate exclusions, both because they are not Kubernetes objects:
 	# cluster/kind.yaml is kind's own config format, and *-values.yaml files are
 	# Helm inputs. Neither has a kind, and no schema describes either.
 	[ -e "$f" ] || continue
 	case "$f" in *-values.yaml) continue ;; esac
+	manifests=$((manifests + 1))
+	[ "$have_kubeconform" -eq 1 ] || continue
 	if ! kubeconform -strict -ignore-missing-schemas "$f" >/dev/null 2>&1; then
 		bad "does not validate: $f"
 		kubeconform -strict -ignore-missing-schemas "$f" 2>&1 | sed 's/^/       /' | head -3
 	fi
 done
-[ "$fail" -eq "$before" ] && ok 'every manifest validates'
+if [ "$have_kubeconform" -eq 0 ]; then
+	skipped "${manifests} manifest(s) NOT validated: kubeconform is not on PATH (brew install kubeconform)"
+elif [ "$fail" -eq "$before" ]; then
+	ok "every manifest validates (${manifests})"
+fi
 
 printf '\n== versions are pinned\n'
 # A floating tag in the platform is the same defect the guardrails reject in
@@ -93,5 +125,10 @@ else
 fi
 
 printf '\n'
+[ "$skip" -eq 0 ] || printf '%d check(s) SKIPPED -- not run, not passed\n' "$skip"
 [ "$fail" -eq 0 ] || { printf '%d check(s) failed\n\n' "$fail"; exit 1; }
-printf 'all checks passed\n\n'
+if [ "$skip" -eq 0 ]; then
+	printf 'all checks passed\n\n'
+else
+	printf 'every check that ran passed; %d was not run\n\n' "$skip"
+fi
