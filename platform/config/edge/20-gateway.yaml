@@ -13,7 +13,20 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
   name: platform
-  annotations: {argocd.argoproj.io/sync-wave: "0"}
+  # Wave 1, after the EnvoyProxy it names at wave 0 below. Both sat at wave 0
+  # and the bring-up failed intermittently: within a wave Argo applies in its
+  # own kind order, and when the GatewayClass went first Envoy Gateway refused
+  # it -- "Invalid parametersRef: failed to find envoyproxy
+  # platform-edge/platform-proxy" -- and latched the status at Accepted=False.
+  # The EnvoyProxy appearing seconds later did not clear it; the class was still
+  # Accepted=False ten minutes on. Without an accepted class no Gateway is ever
+  # created, so the certificate at wave 3, the Gateway at 4 and the route at 5
+  # can never progress, and the Application sits OutOfSync until its deadline.
+  #
+  # This is the same shape as the certificate-before-issuer deadlock recorded in
+  # DESIGN.md, and it is worse in one way: it is a race rather than a certainty,
+  # so it passed three consecutive runs before it failed one.
+  annotations: {argocd.argoproj.io/sync-wave: "1"}
 spec:
   # The one place the implementation is named. Swapping Envoy Gateway for Istio
   # or Cilium changes this string and the Application that installs it.
@@ -37,6 +50,9 @@ kind: EnvoyProxy
 metadata:
   name: platform-proxy
   namespace: platform-edge
+  # Wave 0: the GatewayClass above names this object in its parametersRef and is
+  # refused if it does not already exist, so it has to be a strictly earlier
+  # wave, not merely earlier in the file.
   annotations: {argocd.argoproj.io/sync-wave: "0"}
 spec:
   provider:
