@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="659" height="742" viewBox="0 0 659 742" role="img" aria-label="make up · nine Applications, Synced and Healthy">
+<style>text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:13px;white-space:pre}</style>
+<rect width="659" height="742" rx="10" fill="#0d1117" stroke="#30363d"/>
+<path d="M0 10a10 10 0 0 1 10-10h639a10 10 0 0 1 10 10v28H0z" fill="#161b22"/>
+<line x1="0" y1="38" x2="659" y2="38" stroke="#30363d"/>
+<circle cx="20" cy="19" r="5.5" fill="#ff5f56"/>
+<circle cx="40" cy="19" r="5.5" fill="#ffbd2e"/>
+<circle cx="60" cy="19" r="5.5" fill="#27c93f"/>
+<text x="368.5" y="24" fill="#8b949e" text-anchor="middle" font-size="12">make up · nine Applications, Synced and Healthy</text>
+<text x="22" y="67" fill="#58a6ff">$ make up</text>
+<text x="22" y="109" fill="#58a6ff">==&gt; Installing the platform in dependency order, one component at a time</text>
+<text x="22" y="130" fill="#c9d1d9">    (each component must be Ready before the next is created)</text>
+<text x="22" y="172" fill="#3fb950">  argocd-repositories is Ready (10s)</text>
+<text x="22" y="193" fill="#3fb950">  cert-manager is Ready (20s)</text>
+<text x="22" y="214" fill="#3fb950">  envoy-gateway is Ready (50s)</text>
+<text x="22" y="235" fill="#3fb950">  kyverno is Ready (40s)</text>
+<text x="22" y="256" fill="#3fb950">  platform-config is Ready (30s)</text>
+<text x="22" y="277" fill="#3fb950">  guardrails is Ready (10s)</text>
+<text x="22" y="298" fill="#3fb950">  otel-collector is Ready (11s)</text>
+<text x="22" y="319" fill="#3fb950">  quote-api is Ready (10s)</text>
+<text x="22" y="361" fill="#58a6ff">==&gt; Applying the app-of-apps root -- Argo CD takes over from here</text>
+<text x="22" y="382" fill="#58a6ff">==&gt; Confirming every Application is Synced and Healthy</text>
+<text x="22" y="403" fill="#3fb950">   30s  9/9 Synced+Healthy (expecting 9 applications)</text>
+<text x="22" y="445" fill="#3fb950">wait: converged in 30s</text>
+<text x="22" y="487" fill="#58a6ff">$ kubectl -n argocd get applications</text>
+<text x="22" y="508" fill="#bc8cff">NAME                  SYNC STATUS   HEALTH STATUS</text>
+<text x="22" y="529" fill="#3fb950" font-weight="600">argocd-repositories   Synced        Healthy</text>
+<text x="22" y="550" fill="#3fb950" font-weight="600">cert-manager          Synced        Healthy</text>
+<text x="22" y="571" fill="#3fb950" font-weight="600">envoy-gateway         Synced        Healthy</text>
+<text x="22" y="592" fill="#3fb950" font-weight="600">guardrails            Synced        Healthy</text>
+<text x="22" y="613" fill="#3fb950" font-weight="600">kyverno               Synced        Healthy</text>
+<text x="22" y="634" fill="#3fb950" font-weight="600">otel-collector        Synced        Healthy</text>
+<text x="22" y="655" fill="#3fb950" font-weight="600">platform-config       Synced        Healthy</text>
+<text x="22" y="676" fill="#3fb950" font-weight="600">platform-root         Synced        Healthy</text>
+<text x="22" y="697" fill="#3fb950" font-weight="600">quote-api             Synced        Healthy</text>
+</svg>

@@ -24,23 +24,30 @@ Nine Applications. One of them — `platform-root` — is the only thing applied
 hand; it produces the other eight. Adding a platform component means adding a
 file to `platform/applications/` and committing, never `helm install`.
 
-```
-$ kubectl -n argocd get applications
-NAME                  SYNC STATUS   HEALTH STATUS
-argocd-repositories   Synced        Healthy
-cert-manager          Synced        Healthy
-envoy-gateway         Synced        Healthy
-guardrails            Synced        Healthy
-kyverno               Synced        Healthy
-otel-collector        Synced        Healthy
-platform-config       Synced        Healthy
-platform-root         Synced        Healthy
-quote-api             Synced        Healthy
-```
+![make up: eight components installed one at a time, then nine Applications Synced and Healthy](docs/images/make-up.svg)
 
-`make demo` prints the other two results: the sample workload answering over
-HTTPS on a certificate issued by the platform's own CA, and six policy
-violations refused at admission with the compliant deploy admitted.
+One component at a time, each blocking until it is genuinely Synced *and*
+Healthy before the next is created. Argo CD's sync waves do not do this on their
+own — they order when a child Application **object** is created, not when its
+contents finish syncing — and the difference is the whole of
+[DESIGN.md § sync waves](DESIGN.md#what-the-sync-waves-actually-do).
+
+![make demo-guardrails: six violations refused at admission, the compliant deploy admitted](docs/images/guardrails.svg)
+
+Six violations refused at admission, each naming the rule that caught it, and
+the same Deployment with nothing broken admitted. Both directions, because a
+policy that matches everything and a policy that matches nothing look identical
+if you only check one.
+
+![make demo-telemetry: 190 spans arriving at a collector the app team never named](docs/images/telemetry.svg)
+
+The payments team's values file names no endpoint, no exporter and no collector.
+The spans arrive anyway.
+
+> Every capture above is real output from one `make up` on an 8-core M1 Pro,
+> not a mock-up. CI runs the same bring-up and the same demos on a clean runner
+> with no sibling checkout, so the claim is checkable without trusting the
+> picture.
 
 ---
 
@@ -106,7 +113,7 @@ GitHub, and your branch is not renamed. It is what lets the platform be brought
 up from a topic branch rather than only from `main`.
 
 ```bash
-make demo     # the three things that prove it works
+make demo     # the four things that prove it works
 make status   # applications, edge, guardrails, workloads
 make argo     # the Argo CD UI, with the admin password
 make down     # delete the cluster and .work/

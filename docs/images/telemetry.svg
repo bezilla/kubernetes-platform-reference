@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="967" height="679" viewBox="0 0 967 679" role="img" aria-label="make demo-telemetry · spans the app team never configured">
+<style>text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:13px;white-space:pre}</style>
+<rect width="967" height="679" rx="10" fill="#0d1117" stroke="#30363d"/>
+<path d="M0 10a10 10 0 0 1 10-10h947a10 10 0 0 1 10 10v28H0z" fill="#161b22"/>
+<line x1="0" y1="38" x2="967" y2="38" stroke="#30363d"/>
+<circle cx="20" cy="19" r="5.5" fill="#ff5f56"/>
+<circle cx="40" cy="19" r="5.5" fill="#ffbd2e"/>
+<circle cx="60" cy="19" r="5.5" fill="#27c93f"/>
+<text x="522.5" y="24" fill="#8b949e" text-anchor="middle" font-size="12">make demo-telemetry · spans the app team never configured</text>
+<text x="22" y="67" fill="#58a6ff">$ make demo-telemetry</text>
+<text x="22" y="109" fill="#c9d1d9" font-weight="600">What the app team wrote about telemetry</text>
+<text x="22" y="130" fill="#c9d1d9">  nothing. Not one key. apps/quote-api/values.yaml is the whole of</text>
+<text x="22" y="151" fill="#c9d1d9">  what the payments team writes, and it names no endpoint, no</text>
+<text x="22" y="172" fill="#c9d1d9">  exporter, no SDK setting and no collector.</text>
+<text x="22" y="193" fill="#c9d1d9" font-weight="600">What the platform injected on their behalf</text>
+<text x="22" y="214" fill="#c9d1d9">  OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector-opentelemetry-collector.platfor…</text>
+<text x="22" y="235" fill="#c9d1d9">  OTEL_SERVICE_NAME=quote-api</text>
+<text x="22" y="256" fill="#c9d1d9">  OTEL_RESOURCE_ATTRIBUTES=service.namespace=tenant-quotes,deployment.env…</text>
+<text x="22" y="277" fill="#c9d1d9" font-weight="600">Where those spans land</text>
+<text x="22" y="298" fill="#c9d1d9">  otel-collector-opentelemetry-collector  OTLP/gRPC :4317  ClusterIP 10.96.250.102</text>
+<text x="22" y="319" fill="#c9d1d9">  exporter: debug -&gt; the collector pod log, so the proof is kubectl logs</text>
+<text x="22" y="340" fill="#c9d1d9" font-weight="600">Generating 12 requests through the edge</text>
+<text x="22" y="361" fill="#c9d1d9">  responses: 200 200 200 200 200 200 200 200 200 200 200 200</text>
+<text x="22" y="382" fill="#c9d1d9">  waiting for the batch processor to flush...............</text>
+<text x="22" y="403" fill="#c9d1d9" font-weight="600">What the collector received</text>
+<text x="22" y="424" fill="#3fb950">  spans received:               190  (across 12 resource spans)</text>
+<text x="22" y="445" fill="#c9d1d9">  trace export batches:         8</text>
+<text x="22" y="466" fill="#c9d1d9">  metric data points:           880</text>
+<text x="22" y="487" fill="#c9d1d9" font-weight="600">The collector saying so, in its own log</text>
+<text x="22" y="508" fill="#c9d1d9">  2026-09-06T02:02:38.246Z  info  Traces  {... &quot;otelcol.signal&quot;: &quot;traces&quot;, &quot;resource spans&quot;: 1, &quot;spans&quot;: 35}</text>
+<text x="22" y="529" fill="#c9d1d9">  2026-09-06T02:02:38.447Z  info  Traces  {... &quot;otelcol.signal&quot;: &quot;traces&quot;, &quot;resource spans&quot;: 1, &quot;spans&quot;: 25}</text>
+<text x="22" y="550" fill="#c9d1d9" font-weight="600">The same requests, from the workload side</text>
+<text x="22" y="571" fill="#c9d1d9">  sku=SKU-1  trace_id=21d59e989db9bc41c339c1d0f633ad12</text>
+<text x="22" y="592" fill="#c9d1d9">  sku=SKU-1  trace_id=94d9121d9d7316f9ec576b19f429e069</text>
+<text x="22" y="613" fill="#c9d1d9">  sku=SKU-1  trace_id=ea0980d2a1d571068fc550bb93e76bc0</text>
+<text x="22" y="634" fill="#3fb950">  The team configured nothing. The spans arrived anyway.</text>
+</svg>
