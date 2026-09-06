@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
-## [0.1.0] — 2026-09-05
+## 0.1.0 — 2026-09-05
 
 ### Added
 
@@ -105,9 +105,10 @@ has the detail.
   pattern it cannot honour. It reads blobs and pipes them to grep now, and
   probes its own scanner in both directions before trusting it.
 
-[Unreleased]: https://github.com/bezilla/kubernetes-platform-reference/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/bezilla/kubernetes-platform-reference/releases/tag/v0.1.0
+[Unreleased]: https://github.com/bezilla/kubernetes-platform-reference/compare/2497d27d43c7f9796836b99c32f6898af9c02854...HEAD
 
-<!-- Both links resolve once v0.1.0 is tagged and released. The tag is the
-     release: this repository has no build to publish, so an annotated tag on
-     the commit the CHANGELOG describes is the whole of it. -->
+<!-- The compare link points at the first commit, not at a tag, because there is
+     no tag. There was a [0.1.0] link here to a release that had never been cut;
+     it returned 404 from the day it was written. A version gets tagged when the
+     bring-up job has proved itself in CI, and the link gets pointed at it then.
+     A reference to a release that does not exist is worse than no reference. -->
