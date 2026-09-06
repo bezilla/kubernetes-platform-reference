@@ -27,7 +27,6 @@ pod="$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=git-server \
 rm -rf "$MIRROR"
 mkdir -p .work
 git init -q --bare "$MIRROR"
-git push -q "$MIRROR" "+refs/heads/${BRANCH}:refs/heads/${BRANCH}"
 # Every Application pins `targetRevision: main`, and lint.sh rejects a
 # floating HEAD, so the ref they track has to be a real branch name. But this
 # script mirrors whatever branch is checked out. From a topic branch the
@@ -37,9 +36,15 @@ git push -q "$MIRROR" "+refs/heads/${BRANCH}:refs/heads/${BRANCH}"
 # branch the one place you cannot test a change to it.
 #
 # Publishing the working branch under `main` as well is what makes the
-# bring-up work from any branch. On `main` the two refspecs name the same
-# ref and git rejects the duplicate, so only alias when they differ.
-[ "$BRANCH" = 'main' ] || git push -q "$MIRROR" "+refs/heads/${BRANCH}:refs/heads/main"
+# bring-up work from any branch. On `main` the two refspecs name the same ref
+# and git rejects the duplicate, so only alias when they differ.
+#
+# One push rather than two: the pre-push gate runs once per invocation and its
+# gitleaks scan walks all of history, so pushing the refspecs separately paid
+# for that scan twice on every publish.
+refspecs=( "+refs/heads/${BRANCH}:refs/heads/${BRANCH}" )
+[ "$BRANCH" = 'main' ] || refspecs+=( "+refs/heads/${BRANCH}:refs/heads/main" )
+git push -q "$MIRROR" "${refspecs[@]}"
 git -C "$MIRROR" symbolic-ref HEAD "refs/heads/${BRANCH}"
 # No `git update-server-info` here. That command exists to generate the static
 # info/refs a DUMB HTTP client reads; the server runs git-http-backend, which
