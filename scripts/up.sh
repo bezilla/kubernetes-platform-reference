@@ -167,9 +167,22 @@ up_dump_state() {
 	} 2>&1 | tee -a "$UP_TIMEOUT_DUMP" >&2
 }
 
+# The sleep is a CHILD of the watchdog subshell and does not die with it, so its
+# pid is recorded here for up_cleanup to reap. See the comment there for what a
+# surviving sleep does to anything that pipes this script's output.
+UP_WD_SLEEP_PIDFILE="$(mktemp "${TMPDIR:-/tmp}/up-watchdog.XXXXXX")"
+UP_WD_DISARM="${UP_WD_SLEEP_PIDFILE}.disarm"
+
 up_main_pid=$$
 (
-	sleep "$UP_DEADLINE"
+	sleep "$UP_DEADLINE" &
+	wd_sleep=$!
+	printf '%s' "$wd_sleep" > "$UP_WD_SLEEP_PIDFILE"
+	wait "$wd_sleep" 2>/dev/null
+	# Disarmed while this was asleep: the run finished and up_cleanup is tearing
+	# the watchdog down. Firing now would dump a timeout and kill a bring-up that
+	# had already succeeded.
+	[ -f "$UP_WD_DISARM" ] && exit 0
 	wd_self=$BASHPID
 	up_dump_state "$UP_DEADLINE"
 	printf '\nup: killing the bring-up at the %ss ceiling. State above and in %s\n' \
@@ -198,11 +211,30 @@ up_watchdog_pid=$!
 # `sleep 900` that later kills an unrelated process is a worse bug than the one
 # this fixes.
 up_cleanup() {
+	# Disarm BEFORE killing anything. Killing the sleep is what wakes the
+	# watchdog, and a watchdog that wakes without this flag proceeds straight
+	# into dumping state and killing a run that just succeeded.
+	: > "$UP_WD_DISARM" 2>/dev/null || true
 	if [ -n "${up_watchdog_pid:-}" ]; then
 		kill "$up_watchdog_pid" 2>/dev/null || true
+	fi
+	# Then the sleep. `kill` on the subshell does NOT take its children with it:
+	# the sleep is orphaned to init and keeps the stdout and stderr it inherited
+	# OPEN. Anything that reads this script through a pipe -- CI, `make up | tee`,
+	# any wrapper -- then blocks waiting for EOF that cannot come until the full
+	# ceiling elapses, on a run that already finished. Observed: a 288s bring-up
+	# that a wrapper reported as 653s because a leaked `sleep 900` still held the
+	# pipe.
+	local wd_sleep
+	wd_sleep="$(cat "$UP_WD_SLEEP_PIDFILE" 2>/dev/null || true)"
+	if [ -n "$wd_sleep" ]; then
+		kill "$wd_sleep" 2>/dev/null || true
+	fi
+	if [ -n "${up_watchdog_pid:-}" ]; then
 		wait "$up_watchdog_pid" 2>/dev/null || true
 		up_watchdog_pid=''
 	fi
+	rm -f "$UP_WD_SLEEP_PIDFILE" "$UP_WD_DISARM" 2>/dev/null || true
 }
 trap up_cleanup EXIT
 trap 'printf "\nup: terminated at the %ss wall-clock ceiling\n" "$UP_DEADLINE" >&2; exit 124' TERM
