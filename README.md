@@ -37,9 +37,16 @@ neither of the others present.*
   isolated accounts. The `platform.internal/team` labels the guardrails enforce
   here are what its cost attribution keys on.
 - **[otel-service-reference](https://github.com/bezilla/otel-service-reference)** —
-  the workload that deploys onto it. If a checkout sits at
-  `../otel-service-reference`, `make up` builds the real service. If not, it
-  builds a placeholder and everything still works.
+  the workload that deploys onto it. **You do not need it.** With a checkout at
+  `../otel-service-reference`, `make up` builds the real instrumented service.
+  Without one it builds the placeholder in `bootstrap/fallback-workload` — a
+  pinned nginx with one config file, which serves the same `/healthz` the chart
+  probes, on the same ports, as the same non-root user. The paved road, the
+  edge, the certificate and the guardrails are all still demonstrated.
+  **What is lost is the telemetry, and only that:** the placeholder speaks no
+  OTLP, so `make demo-telemetry` reports zero spans and says which of the two
+  reasons it is. CI takes this path on every run, because it is the path a
+  stranger cloning this repository takes.
 
 ---
 
@@ -72,13 +79,17 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | Live admission demo | **6 refused, 1 admitted** |
 | Telemetry proof | **65 spans**, from a workload configured for none |
 | Deployment deleted out of band | **restored in 5s**, no sync run |
-| Kubernetes versions CI brings it up on | **1.32, 1.33, 1.34** |
-| In-place upgrade from the previous chart versions | **converges in 31s** |
+| Kubernetes versions the CI matrix targets | **1.32, 1.33, 1.34** — see the note below |
+| In-place upgrade from the previous chart versions | converged, once, locally |
 | Environments rendered and guardrail-checked | **3 × 2 tenants, 21 assertions** |
 
-> **CI runs this same bring-up and these same demos on a clean runner**, with no
-> sibling repository present. The captures here are real output, and the claim
-> is checkable without trusting them.
+> **What has actually run, and where.** The captures above are real output from
+> this machine. The bring-up has been observed on Kubernetes 1.32 and 1.34
+> locally; **1.33 is a matrix target that has not run anywhere yet**, and no
+> cluster job has run in CI at all — the workflow is new. Numbers here without a
+> qualifier are from repeated local runs; the upgrade figure is a single one.
+> When CI has a run history these become checkable without trusting a picture,
+> and this note gets replaced by that history.
 
 ---
 
@@ -87,7 +98,7 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 ![The Argo CD app-of-apps tree: one root Application applied by hand, nine children it produces in sync-wave order, and what a tenant receives from them](docs/images/app-of-apps.svg)
 
 *One reconciler and one hand-applied Application. `platform-root` produces the
-other nine in sync-wave order — four from upstream Helm charts, four from paths
+other nine in sync-wave order — four from upstream Helm charts, five from paths
 in this repository. Adding a platform component is a file and a commit, never
 `helm install`.*
 
@@ -351,6 +362,7 @@ bring-up fails; skip it otherwise.
 |---|---|
 | Docker | 4 CPUs and 5120 MiB minimum, 8 CPUs and 8192 MiB recommended. **Not the containerd image store** — see below. |
 | [kind](https://kind.sigs.k8s.io) | creates the cluster |
+| `docker` on your PATH | the `docker-desktop` cask needs an **interactive** sudo to symlink into `/usr/local/bin`; installed non-interactively it rolls that step back and leaves `docker` off PATH entirely. Run the install from a terminal that can prompt, then check `command -v docker` before going further |
 | kubectl, [helm](https://helm.sh), git | |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | only for `make init`; the pre-push gate fails closed without it |
 | [kubeconform](https://github.com/yannh/kubeconform) | only for `make lint`, which skips manifest validation with a count when it is absent rather than failing |
@@ -415,7 +427,7 @@ CI runs six jobs:
 | `chart · manifests` | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
 | `guardrails` | the policy suite, both directions |
 | `identity` | the identity, attribution and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
-| `bring-up · demo` | the whole platform built and all five demos run — **on Kubernetes 1.32, 1.33 and 1.34**, on a clean runner, with no sibling repository present |
+| `bring-up · demo` | the whole platform built and all five demos run, on a clean runner, with no sibling repository present. The matrix targets Kubernetes 1.32, 1.33 and 1.34 |
 | `upgrade in place` | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
 | `supply chain` | trivy over the tree and both built images, an SPDX SBOM kept per image |
 
