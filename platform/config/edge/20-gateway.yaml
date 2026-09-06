@@ -24,8 +24,19 @@ metadata:
   # can never progress, and the Application sits OutOfSync until its deadline.
   #
   # This is the same shape as the certificate-before-issuer deadlock recorded in
-  # DESIGN.md, and it is worse in one way: it is a race rather than a certainty,
-  # so it passed three consecutive runs before it failed one.
+  # DESIGN.md, and it is worse in one way: it is a race rather than a certainty.
+  # Anecdotally it passed three consecutive runs before it failed one -- that is
+  # an anecdote from a handful of local runs, not a measured rate, and it should
+  # not be read as one.
+  #
+  # WHAT IS NOT KNOWN. Why the class latched. Envoy Gateway watches EnvoyProxy
+  # objects, so the expectation is that the referenced object appearing would
+  # cause the GatewayClass to be reconciled again; it did not, for at least ten
+  # minutes, with the EnvoyProxy present the whole time. That mechanism was never
+  # established. Ordering the wave removes the TRIGGER -- the class is no longer
+  # admitted before the object it names -- and does not explain or fix the latch.
+  # If a future run sees Accepted=False with the EnvoyProxy already present, this
+  # ordering will not save it. See DESIGN.md.
   annotations: {argocd.argoproj.io/sync-wave: "1"}
 spec:
   # The one place the implementation is named. Swapping Envoy Gateway for Istio

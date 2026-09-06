@@ -556,6 +556,35 @@ answer. The counts now come from summing the exporter's own `"spans": N` field,
 and which workload is deployed is decided by what it answers over HTTP rather
 than by exec'ing into it.
 
+**A GatewayClass that latched, and a race nobody has explained.** The
+`GatewayClass` and the `EnvoyProxy` its `parametersRef` names shared sync-wave 0.
+Within a wave Argo CD applies in its own kind order, so which landed first was
+not something the manifests decided. When the class went first, Envoy Gateway
+refused it -- *Invalid parametersRef: failed to find envoyproxy
+platform-edge/platform-proxy* -- and set `Accepted=False`. Without an accepted
+class no Gateway is created, so the certificate, the Gateway and the route
+behind it could not progress, and `platform-config` sat `OutOfSync` for 626s of
+its 900s deadline.
+
+**This one is recorded as unexplained, because it is.** Envoy Gateway watches
+`EnvoyProxy` objects, so the referenced object appearing seconds later should
+have caused the class to be reconciled again. It did not: the class was still
+`Accepted=False` ten minutes on, with the `EnvoyProxy` present that whole time.
+Why it latched was never established. Ordering the `EnvoyProxy` into an earlier
+wave removes the **trigger** -- the class is no longer admitted before the object
+it names -- and says nothing about the **cause**. If the latch has some other
+path into it, this fix will not catch that path.
+
+It is also the only bug here that is a race rather than a certainty. It passed
+three consecutive bring-ups before failing one, which is an anecdote from a
+handful of local runs and not a rate. Whether it has a rate worth quoting is a
+thing CI will answer and this document currently cannot.
+
+The reason to write it down this way: every other entry above ends with a
+mechanism. This one ends with a mitigation, and a fix whose mechanism is unknown
+being filed next to fixes whose mechanisms are known is exactly how a repository
+starts overstating what it understands.
+
 **Two host defects that cost two full runs, now refused in preflight.** Docker
 Desktop's containerd image store made `kind load docker-image` fail on a pulled
 multi-architecture image, minutes into a run, in a way that reads as a kind bug.
