@@ -6,31 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+Nothing yet.
 
-- **The platform can be brought up from any branch.** `publish.sh` mirrors the
-  working branch under `refs/heads/main` in the in-cluster Git server as well as
-  under its own name. The Applications pin `targetRevision: main`, so from a
-  topic branch the mirror previously had no `main` and every Application sat in
-  `ComparisonError` until its deadline. The alias is written to the in-cluster
-  mirror only; nothing is pushed to GitHub.
-- **The fallback workload passes the chart's probes.** It is now built from
-  `bootstrap/fallback-workload` rather than pulled and tagged. The previous
-  fallback served no `/healthz`, so on any machine without a checkout of
-  `otel-service-reference` the pod crash-looped until the 900s deadline.
-- **`make demo-gitops` no longer commits to your branch.** It builds its commit
-  with plumbing and publishes it from a scratch ref that is then deleted. HEAD,
-  the index and the working tree are untouched.
-- **macOS `tar` no longer corrupts the published repository.** `COPYFILE_DISABLE=1`
-  stops BSD tar writing AppleDouble `._` entries into the bare mirror.
-- **`make up` refuses Docker's containerd image store.** Under it, `kind load
-  docker-image` fails on a pulled multi-architecture image several minutes into
-  a run. The preflight names the driver and the setting.
-- **`make lint` skips manifest validation with a count when `kubeconform` is
-  absent**, rather than reporting 29 validation failures that were really one
-  missing binary. In CI its absence remains a hard failure.
-
-## [0.1.0]
+## [0.1.0] — 2026-09-05
 
 ### Added
 
@@ -60,9 +38,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   compliant resources pass as well as that violations fail.
 - **`make demo`** — the app over HTTPS on a cert-manager certificate, the
   guardrail rejections, and a commit that changes the running cluster.
-- **CI** with no cluster required: chart lint plus render plus schema
-  validation, the policy suite, and the identity gate over all history at
-  fetch-depth 0.
+- **CI, including a real bring-up.** Five jobs: chart lint plus render plus
+  schema validation, the policy suite in both directions, the identity gate over
+  all history at fetch-depth 0, a `cluster` job that installs kind and runs
+  `make up` and `make demo` on a runner without the sibling workload repository,
+  and a `supply-chain` job running trivy over the tree and both built images
+  with an SPDX SBOM kept per image. Every action is pinned by commit SHA.
+- **Dependabot** for the actions and the digest-pinned Alpine base, because an
+  immutable pin never picks up a security release on its own.
+- **`make demo-telemetry`** — spans arriving at a collector the app team never
+  named, proving the observability seam rather than asserting it.
 - **The pre-push gate**, with a self-test proving it rejects wrong authors,
   wrong committers, attribution in a message, attribution in a tree, and a term
   added and deleted within one push range.
@@ -86,6 +71,43 @@ has the detail.
   from.
 - The Git server served dumb HTTP, which Argo CD's go-git client cannot read at
   all. Replaced with `git-http-backend` under lighttpd.
+- The platform could only be installed from `main`. Every Application pins
+  `targetRevision: main` and `publish.sh` mirrored only the checked-out branch,
+  so from a topic branch the in-cluster server had no `main` and every
+  Application sat in `ComparisonError` until its deadline. `publish.sh` now
+  aliases the working branch to `refs/heads/main` on that mirror only; nothing
+  is pushed to GitHub and no branch is renamed.
+- The fallback workload could never become Ready. It was a pinned nginx that was
+  pulled and tagged, on the documented claim that it satisfied every guardrail
+  including "probeable" — and the chart probes `/healthz`, which stock nginx does
+  not serve. Anyone cloning this without the sibling checkout paid 900s to be
+  told nothing. It is built from `bootstrap/fallback-workload` now.
+- `make demo-gitops` committed to whatever branch was checked out, leaving demo
+  noise in the middle of the reader's own work. It builds its commit with
+  plumbing and publishes from a scratch ref now; HEAD, the index and the working
+  tree are untouched.
+- A `GatewayClass` and the `EnvoyProxy` its `parametersRef` names shared a sync
+  wave. When the class landed first, Envoy Gateway latched it at
+  `Accepted=False` and never re-evaluated, so no Gateway was created and the
+  certificate, Gateway and route behind it could not progress. It is a race, so
+  it passed three bring-ups before failing one.
+- BSD tar on macOS published AppleDouble `._` entries into the bare mirror,
+  where git read them as pack files and errored on every ref. Fixed with
+  `COPYFILE_DISABLE=1`.
+- Docker Desktop's containerd image store broke `kind load docker-image` on a
+  pulled multi-architecture image, minutes into a run and only for pulled
+  images, so it read as a kind bug. `make up` refuses it by name now.
+- `make lint` reported 29 manifest validation failures on a clean machine when
+  the truth was that `kubeconform` was not installed. It skips with a count now,
+  never as a pass; in CI its absence stays a hard failure.
+- The pre-push gate read each commit's tree with `git grep`, which does not use
+  the system regex engine and matches nothing — silently, exiting 0 — for a
+  pattern it cannot honour. It reads blobs and pipes them to grep now, and
+  probes its own scanner in both directions before trusting it.
 
 [Unreleased]: https://github.com/bezilla/kubernetes-platform-reference/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/bezilla/kubernetes-platform-reference/releases/tag/v0.1.0
+
+<!-- Both links resolve once v0.1.0 is tagged and released. The tag is the
+     release: this repository has no build to publish, so an annotated tag on
+     the commit the CHANGELOG describes is the whole of it. -->

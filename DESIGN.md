@@ -540,6 +540,22 @@ The shape worth remembering: the tool did not fail, it succeeded emptily, and
 an empty success reads as good news. Everything the gate now does about that
 follows from one accidental cross-check.
 
+**A telemetry check that reported no telemetry against a working pipeline.**
+The first `make demo-telemetry` counted spans by grepping the collector log for
+`Span #` and `TracesExporter`. Both are plausible and both are wrong: with
+`verbosity: basic` the debug exporter never writes `Span #` -- that is
+`detailed` -- and this collector logs the message as `Traces`. It reported zero
+spans while 60 were arriving, then explained the zero using a second broken
+check that exec'd `/service --help` into a distroless image with no shell and
+concluded the instrumented workload was not instrumented. Two confident,
+mutually reinforcing wrong answers.
+
+It is the same failure as the history scan above, in a different costume: a
+tool that returns nothing, successfully, and a reader who takes nothing for an
+answer. The counts now come from summing the exporter's own `"spans": N` field,
+and which workload is deployed is decided by what it answers over HTTP rather
+than by exec'ing into it.
+
 **Two host defects that cost two full runs, now refused in preflight.** Docker
 Desktop's containerd image store made `kind load docker-image` fail on a pulled
 multi-architecture image, minutes into a run, in a way that reads as a kind bug.
