@@ -7,36 +7,85 @@
 ![Gateway API](https://img.shields.io/badge/Gateway%20API-not%20Ingress-7241d6)
 ![Kyverno](https://img.shields.io/badge/Kyverno-Enforce-2ea44f)
 
-A production-shaped Kubernetes platform — **Argo CD** app-of-apps GitOps, a
-**Gateway API** edge with **cert-manager** TLS, four **Kyverno** guardrails in
-`Enforce`, and an **OpenTelemetry** collector every workload reaches without
-configuring it — built so an app team writes one twenty-line values file and
-gets a routable, policy-compliant, observable service. No Deployment, no
-Certificate, no HTTPRoute, no security context, no resource arithmetic.
+**A complete Kubernetes platform you can run on your laptop in five minutes.**
 
-It is meant to be read as much as run: the non-obvious choices are written down
-in [DESIGN.md](DESIGN.md), along with every defect that changed how it is
-tested. `make up` builds the whole thing on a local kind cluster in about five
-minutes and does not return until all nine Applications are Synced and Healthy.
+An app team writes one twenty-line file. They get a service that is deployed,
+routable, on HTTPS, policy-checked and sending telemetry — without writing a
+Deployment, a Certificate, an HTTPRoute, a security context or a single resource
+number.
 
-Aimed at platform engineers evaluating a paved-road layout, and at anyone who
-wants a worked example rather than a tutorial.
+It is built from **Argo CD**, **Gateway API**, **cert-manager**, **Kyverno**,
+**Helm** and **OpenTelemetry**, on a local **kind** cluster. Nothing is faked and
+nothing is stubbed.
 
-## Architecture
+It is meant to be read as much as run. Every non-obvious decision is written
+down in [DESIGN.md](DESIGN.md), along with every bug that changed how this is
+tested — including the ones that were embarrassing.
+
+---
+
+## Part of a set
+
+![Three repositories, one system: an OpenTelemetry-instrumented Go service on top, this Kubernetes platform in the middle, and an AWS estate of EKS, Aurora and a CloudFront edge underneath](docs/images/three-repos.svg)
+
+*The cloud underneath, the platform in the middle, the application on top. Each
+repository runs on its own — this one brings up a complete platform on kind with
+neither of the others present.*
+
+- **[terragrunt-reference-architecture](https://github.com/bezilla/terragrunt-reference-architecture)** —
+  the AWS estate this would run on. EKS, Aurora, a CloudFront/WAF edge, three
+  isolated accounts. The `platform.internal/team` labels the guardrails enforce
+  here are what its cost attribution keys on.
+- **[otel-service-reference](https://github.com/bezilla/otel-service-reference)** —
+  the workload that deploys onto it. If a checkout sits at
+  `../otel-service-reference`, `make up` builds the real service. If not, it
+  builds a placeholder and everything still works.
+
+---
+
+## Try it
+
+Three commands. No cloud account, no credentials, no sibling repositories.
+
+```bash
+git clone https://github.com/bezilla/kubernetes-platform-reference
+cd kubernetes-platform-reference
+
+make init     # installs the pre-push gate
+make up       # builds the entire platform — about 5 minutes
+make demo     # the four proofs below
+```
+
+![make up: eight components installed one at a time, then nine Applications Synced and Healthy](docs/images/make-up.svg)
+
+`make up` creates the cluster, installs Argo CD, starts an in-cluster Git
+server, builds the workload image, publishes the repository to that server,
+installs eight components **one at a time**, and blocks until all nine
+Applications are Synced and Healthy. It exits non-zero if anything is not.
+
+| | |
+|---|---|
+| Time to nine Applications Synced and Healthy | **~5 minutes** on 8 cores |
+| Eight components, installed serially | **171s** |
+| `kube-controller-manager` / `kube-scheduler` restarts | **0** |
+| Offline policy suite | **42 tests, 0 excluded** |
+| Live admission demo | **6 refused, 1 admitted** |
+| Telemetry proof | **190 spans** |
+
+> **CI runs this same bring-up and these same demos on a clean runner**, with no
+> sibling repository present. The captures here are real output, and the claim
+> is checkable without trusting them.
+
+---
+
+## What you get
 
 ![The Argo CD app-of-apps tree: one root Application applied by hand, eight children it produces in sync-wave order, and what a tenant receives from them](docs/images/app-of-apps.svg)
 
 *One reconciler and one hand-applied Application. `platform-root` produces the
 other eight in sync-wave order — four from upstream Helm charts, four from paths
-in this repository. Adding a platform component is a file in
-`platform/applications/` and a commit, never `helm install`.*
-
-Only two things are installed imperatively, and both for the same reason:
-Argo CD, because a reconciler cannot reconcile itself into existence, and a Git
-server, because Argo CD needs something to reconcile *from*. Everything after
-that is a commit.
-
-### What each Application provisions
+in this repository. Adding a platform component is a file and a commit, never
+`helm install`.*
 
 | Application | Source | Provisions |
 |---|---|---|
@@ -50,46 +99,23 @@ that is a commit.
 | **quote-api** | this repo · `charts/paved-road` | One tenant on the paved road, from a twenty-line values file |
 | **platform-root** | this repo · `platform/applications` | The app-of-apps root — the only `kubectl apply` in the bring-up |
 
-Every version above is pinned in [`versions.env`](versions.env). The manifests
-cannot source a shell file, so each carries its version literally —
+Every version is pinned in [`versions.env`](versions.env). The manifests cannot
+source a shell file, so each carries its version literally —
 `make check-versions` fails if the two ever disagree, and it runs in CI.
 
----
-
-## It works, and here is the evidence
-
-| | |
-|---|---|
-| `make up` to nine Applications Synced and Healthy | **~5 minutes** on 8 cores / 11946 MiB |
-| Eight platform components, installed one at a time | **171s** total |
-| `kube-controller-manager` / `kube-scheduler` restarts | **0** |
-| Offline policy suite | **42 tests, 42 evaluated, 0 excluded** |
-| Live admission demo | **6 violations refused, 1 compliant deploy admitted** |
-| Telemetry proof | **190 spans** from a workload whose team configured none |
-
-![make up: eight components installed one at a time, then nine Applications Synced and Healthy](docs/images/make-up.svg)
-
-One component at a time, each blocking until it is genuinely Synced *and*
-Healthy before the next is created. Argo CD's sync waves do not do this on their
-own — they order when a child Application **object** is created, not when its
-contents finish syncing. That distinction cost a bring-up, and it is
-[written up in DESIGN.md](DESIGN.md#what-the-sync-waves-actually-do).
+### The guardrails, and the telemetry, proved
 
 ![make demo-guardrails: six violations refused at admission, the compliant deploy admitted](docs/images/guardrails.svg)
 
-Six violations refused at admission, each naming the rule that caught it — and
-the same Deployment with nothing broken admitted. Both directions, always,
-because a policy that matches everything and a policy that matches nothing look
-identical if you only check one.
+Six violations refused, each naming the rule that caught it — and the same
+Deployment with nothing broken admitted. Both directions, always, because a
+policy that matches everything and a policy that matches nothing look identical
+if you only check one.
 
 ![make demo-telemetry: 190 spans arriving at a collector the app team never named](docs/images/telemetry.svg)
 
-The payments team's values file names no endpoint, no exporter and no collector.
-The spans arrive anyway.
-
-> Every capture is real output from one run on an 8-core M1 Pro. **CI runs the
-> same bring-up and the same four demos on a clean runner**, without the sibling
-> workload repository, so none of this depends on trusting a picture.
+The team's values file names no endpoint, no exporter and no collector. The
+spans arrive anyway.
 
 ---
 
@@ -269,7 +295,10 @@ repository cannot back.
 
 ---
 
-## Run it
+## Requirements, and the detail
+
+`make up` refuses to start if any of this is wrong, and says which. Read it if a
+bring-up fails; skip it otherwise.
 
 **Prerequisites**
 
@@ -306,23 +335,9 @@ repository cannot back.
 > others running.
 
 ```bash
-git clone https://github.com/bezilla/kubernetes-platform-reference
-cd kubernetes-platform-reference
-
-make init     # points core.hooksPath at .githooks
-make up       # ~5 minutes on 8 cores; ~17 on a constrained machine
-```
-
-`make up` creates the cluster, installs Argo CD, starts an in-cluster Git
-server, builds the sample image, publishes this repository to that server,
-installs the eight platform components **one at a time**, applies the
-app-of-apps root, and then **blocks until every Application is Synced and
-Healthy**, exiting non-zero if anything is not.
-
-```bash
-make demo     # the four things that prove it works
 make status   # applications, edge, guardrails, workloads
 make argo     # the Argo CD UI, with the admin password
+make publish  # mirror your working tree to the in-cluster Git server
 make down     # delete the cluster and .work/
 ```
 
@@ -356,25 +371,6 @@ action is pinned by commit SHA; Dependabot moves the pins and CI decides whether
 the move is safe.
 
 ---
-
-## Related
-
-Three repositories, one system — the cloud underneath, the platform in the
-middle, the application on top.
-
-- **[terragrunt-reference-architecture](https://github.com/bezilla/terragrunt-reference-architecture)** —
-  the cloud half. AWS accounts, VPCs, EKS clusters and the observability
-  pipeline a platform like this one runs on top of. The `platform.internal/team`
-  labels the guardrails enforce here are what its cost attribution would key on.
-- **[otel-service-reference](https://github.com/bezilla/otel-service-reference)** —
-  the instrumented workload, and where the OpenTelemetry wiring comes from.
-  **You do not need it to run this repository.** With a checkout at
-  `../otel-service-reference`, `make up` builds the real service. Without one it
-  builds a placeholder from `bootstrap/fallback-workload` that serves the same
-  `/healthz` the chart probes, on the same ports, as the same non-root user — so
-  the paved road, the edge, the certificate and the guardrails are all still
-  demonstrated. What is lost is the telemetry, and only that. CI takes that
-  path on every run.
 
 ## Documents
 

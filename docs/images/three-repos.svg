@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 694" width="1240" height="694" role="img" aria-labelledby="t d">
+<title id="t">Three repositories, one system: the application on top, the platform in the middle, the cloud underneath</title>
+<desc id="d">otel-service-reference is a Go service instrumented with OpenTelemetry. It deploys onto kubernetes-platform-reference, this repository, which provides Argo CD GitOps, a Gateway API edge, cert-manager TLS, Kyverno guardrails and an OpenTelemetry collector. That platform runs on terragrunt-reference-architecture, an AWS estate of EKS, Aurora and a CloudFront edge across three accounts. Each repository stands alone.</desc>
+<style>text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}</style>
+<rect width="1240" height="694" fill="#0d1117"/>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/></marker></defs>
+<text x="56" y="52" fill="#f0f6fc" font-size="26" font-weight="700">Three repositories, one system</text>
+<text x="56" y="80" fill="#8b949e" font-size="14">Each one runs on its own. Together they are the cloud underneath, the platform in the middle, and the application on top.</text>
+<rect x="56" y="118" width="1128" height="132" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="118" width="5" height="132" rx="2.5" fill="#f0883e"/>
+<text x="84" y="148" fill="#f0883e" font-size="11" font-weight="700">THE APPLICATION</text>
+<text x="84" y="178" fill="#f0f6fc" font-size="20" font-weight="700">otel-service-reference</text>
+<text x="84" y="202" fill="#c9d1d9" font-size="13">A small Go service, fully OpenTelemetry-instrumented.</text>
+<rect x="84" y="216" width="34" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="101.0" y="232" fill="#8b949e" font-size="11" text-anchor="middle">Go</text>
+<rect x="126" y="216" width="73" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="162.5" y="232" fill="#8b949e" font-size="11" text-anchor="middle">OTel SDK</text>
+<rect x="207" y="216" width="124" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="269.0" y="232" fill="#8b949e" font-size="11" text-anchor="middle">traces + metrics</text>
+<path d="M620.0 258 L620.0 298" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="636.0" y="285.0" fill="#8b949e" font-size="12">deploys as twenty lines of values.yaml</text>
+<rect x="56" y="312" width="1128" height="132" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+<rect x="56" y="312" width="5" height="132" rx="2.5" fill="#58a6ff"/>
+<text x="84" y="342" fill="#58a6ff" font-size="11" font-weight="700">THE PLATFORM  ·  you are here</text>
+<text x="84" y="372" fill="#f0f6fc" font-size="20" font-weight="700">kubernetes-platform-reference</text>
+<text x="84" y="396" fill="#c9d1d9" font-size="13">The paved road it deploys on. One chart is the whole interface.</text>
+<rect x="84" y="410" width="66" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="117.0" y="426" fill="#8b949e" font-size="11" text-anchor="middle">Argo CD</text>
+<rect x="158" y="410" width="92" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="204.0" y="426" fill="#8b949e" font-size="11" text-anchor="middle">Gateway API</text>
+<rect x="258" y="410" width="98" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="307.0" y="426" fill="#8b949e" font-size="11" text-anchor="middle">cert-manager</text>
+<rect x="364" y="410" width="66" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="397.0" y="426" fill="#8b949e" font-size="11" text-anchor="middle">Kyverno</text>
+<rect x="438" y="410" width="111" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="493.5" y="426" fill="#8b949e" font-size="11" text-anchor="middle">OTel Collector</text>
+<rect x="557" y="410" width="47" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="580.5" y="426" fill="#8b949e" font-size="11" text-anchor="middle">Helm</text>
+<rect x="1068" y="334" width="96" height="24" rx="12" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+<text x="1116.0" y="350" fill="#58a6ff" font-size="11" font-weight="700" text-anchor="middle">this repo</text>
+<path d="M620.0 452 L620.0 492" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="636.0" y="479.0" fill="#8b949e" font-size="12">runs on EKS; ships telemetry to the pipeline below</text>
+<rect x="56" y="506" width="1128" height="132" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="506" width="5" height="132" rx="2.5" fill="#bc8cff"/>
+<text x="84" y="536" fill="#bc8cff" font-size="11" font-weight="700">THE CLOUD</text>
+<text x="84" y="566" fill="#f0f6fc" font-size="20" font-weight="700">terragrunt-reference-architecture</text>
+<text x="84" y="590" fill="#c9d1d9" font-size="13">The AWS estate underneath, across three isolated accounts.</text>
+<rect x="84" y="604" width="73" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="120.5" y="620" fill="#8b949e" font-size="11" text-anchor="middle">OpenTofu</text>
+<rect x="165" y="604" width="86" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="208.0" y="620" fill="#8b949e" font-size="11" text-anchor="middle">Terragrunt</text>
+<rect x="259" y="604" width="41" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="279.5" y="620" fill="#8b949e" font-size="11" text-anchor="middle">EKS</text>
+<rect x="308" y="604" width="60" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="338.0" y="620" fill="#8b949e" font-size="11" text-anchor="middle">Aurora</text>
+<rect x="376" y="604" width="124" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="438.0" y="620" fill="#8b949e" font-size="11" text-anchor="middle">CloudFront + WAF</text>
+<text x="56" y="670" fill="#8b949e" font-size="12">Nothing here depends on the other two being present — this repository brings up a complete platform on kind by itself.</text>
+</svg>
