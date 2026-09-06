@@ -40,6 +40,11 @@ jobs:
         run: make shell-check
       - name: helm lint, render, schema and manifest validation
         run: make lint
+      - name: versions.env agrees with every Application manifest
+        # The Application manifests cannot source a shell file, so each carries
+        # its chart version literally. This is the check that keeps that
+        # duplication from drifting.
+        run: make check-versions
 
   policy:
     name: guardrails

@@ -79,8 +79,12 @@ lint: ## helm lint + template the authored chart, and validate every manifest
 policy-test: ## Run the Kyverno policies against known-good and known-bad resources
 	@./scripts/policy-test.sh
 
+.PHONY: check-versions
+check-versions: ## Prove versions.env agrees with every Application manifest
+	@./scripts/check-versions.sh
+
 .PHONY: check
-check: lint policy-test identity ## Everything CI runs that does not need a cluster
+check: lint check-versions policy-test identity ## Everything CI runs that does not need a cluster
 
 # --- the gate -----------------------------------------------------------------
 
