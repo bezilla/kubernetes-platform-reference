@@ -47,7 +47,13 @@ git -C "$MIRROR" symbolic-ref HEAD "refs/heads/${BRANCH}"
 # leave a stale file that nothing consults.
 
 kubectl -n "$NS" exec "$pod" -- sh -c 'rm -rf /srv/git/platform.git && mkdir -p /srv/git/platform.git'
-tar -C "$MIRROR" -cf - . | kubectl -n "$NS" exec -i "$pod" -- tar -C /srv/git/platform.git -xf -
+# BSD tar on macOS writes an AppleDouble `._name` entry alongside every file
+# to carry its extended attributes. Those entries are extracted into the bare
+# repository, where git reads them as pack files and fails: "index file
+# ./objects/pack/._pack-....idx is too small", on every ref it resolves. The
+# mirror on disk is clean -- the corruption is introduced in transit, by the
+# archive itself. COPYFILE_DISABLE tells tar not to write them.
+COPYFILE_DISABLE=1 tar -C "$MIRROR" -cf - . | kubectl -n "$NS" exec -i "$pod" -- tar -C /srv/git/platform.git -xf -
 
 sha="$(git rev-parse --short HEAD)"
 echo "publish: ${BRANCH} @ ${sha} -> http://git-server.${NS}.svc/git/platform.git"
