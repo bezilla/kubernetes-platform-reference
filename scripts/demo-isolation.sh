@@ -653,6 +653,34 @@ fi
 # "While all this happens" is part of the claim. A run that ends with the
 # service degraded has not demonstrated isolation; it has demonstrated that
 # something got through.
+#
+# NOT REDUNDANT WITH THE CLOSED-PATH ASSERTIONS. This looks like a courtesy
+# check after the real ones and it is not; delete it and the suite loses its
+# only assertion that is not about a response code.
+#
+# The two closed-path assertions -- the 404 on GET /admin/inject and the 404 on
+# POST -- ask what the gateway ANSWERED. This asks what the service is DOING
+# afterwards. Those are
+# different questions, and a 404 answers only the first: a request can be
+# refused by whatever handled it and still have reached something on the way, or
+# have been refused on the response path after a side effect already landed. A
+# status code is a statement about one exchange. Whether /api/quote still serves
+# is a statement about the system.
+#
+# Earned in practice, not argued from principle. On the run that first exercised
+# this suite against a deliberately broken boundary, the state comparison read a
+# single replica while the write had landed on a different one, and it passed.
+# The closed-path assertions did fail, so the run was red -- but on the question
+# of whether anything actually CHANGED, the only assertion that caught it was
+# this one, because a third of the traffic had started returning 500. The state
+# comparison reads every replica now and would catch it directly, which removes
+# the need for this to be the backstop but not the reason to keep it: the next
+# gap will not be the one already closed.
+#
+# It also covers damage this script did not aim at. Every other assertion is
+# scoped to /admin/inject; this one notices a service degraded by anything that
+# happened during the run, including by the test itself, and refuses to call
+# that a demonstration of isolation.
 
 step 'The service, after all of that'
 
