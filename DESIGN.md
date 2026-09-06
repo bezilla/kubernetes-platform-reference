@@ -381,6 +381,94 @@ is a claim about Karpenter that the repository cannot back.
 
 ---
 
+## Scanning history is not grepping a checkout
+
+Before this repository could be made public, its whole history had to be
+checked for things that must not ship: attribution, credentials, internal
+hostnames, ticket keys, personal paths. The obvious tool is `git grep` with a
+revision argument, and it is the wrong one.
+
+**`git grep` does not use the system regex engine.** Given a pattern it cannot
+honour -- `\b` and `(?i)` among them -- it does not warn, does not error and
+does not exit non-zero. It matches nothing and exits 0. From the outside that
+is indistinguishable from a clean history, which is the single most dangerous
+failure a verification tool can have: it fails in the direction of "everything
+is fine".
+
+It was caught by accident. A history sweep reported **zero** email addresses
+while the same regex against the checked-out tree reported **ten**. The repo had
+not changed between the two commands; only the engine had. Every other count in
+that sweep -- ticket keys, personal paths, private IPs, cloud identifiers -- had
+come back zero from the same broken invocation, and every one of them would have
+been reported as evidence of a clean history.
+
+**A zero from a scanner you have not calibrated is not evidence.** It is the
+absence of evidence, and the two look identical in a terminal.
+
+### The corrected shape
+
+Read the blobs out and pipe them to a real grep. To sweep all history:
+
+```sh
+git rev-list --objects --all | awk '{print $1}' | sort -u \
+  | git cat-file --batch-check='%(objectname) %(objecttype)' \
+  | awk '$2 == "blob" { print $1 }' \
+  | while read -r oid; do git cat-file blob "$oid"; echo; done \
+  | grep -aoIE "$PATTERN" | sort -u
+```
+
+To scan one commit's tree, which is what the pre-push gate does per commit:
+
+```sh
+while IFS= read -r -d '' entry; do
+    meta="${entry%%$'\t'*}"              # <mode> <type> <oid>
+    blob_path="${entry#*$'\t'}"          # -z leaves the path unquoted
+    read -r _mode blob_type blob_oid <<<"$meta"
+    [ "$blob_type" = 'blob' ] || continue
+    git cat-file blob "$blob_oid" | grep -qIiE "$PATTERN" \
+        && printf '%s\n' "$blob_path"
+done < <(git ls-tree -r -z "$COMMIT")
+```
+
+Two details that are not decoration. `-z` stops git quoting paths that contain
+spaces or unusual bytes, so the scan reports filenames that actually exist. And
+the loop variable is `blob_path`, not `path`: in zsh -- the default shell on
+macOS, where this is most likely to be pasted -- `path` is tied to `$PATH`, so
+assigning to it empties the command search path and every `git` in the loop
+fails with "command not found". That was found by running this snippet, not by
+reading it.
+
+### Calibrate the scanner, in both directions
+
+Reaching for a different tool is not the durable fix, because you cannot
+assume which tool you have. On the machine this was found on, `grep` on PATH
+was **ugrep 7.8.4** and `/usr/bin/grep` was **BSD grep**; neither is GNU grep,
+and a third machine will differ again.
+
+What survives that is calibration. Before trusting a scan, run the scanner
+over a sample that MUST match and a sample that MUST NOT:
+
+```sh
+printf 'a known-forbidden sample\n' | grep -qIiE "$PATTERN" \
+    || die 'scanner matches nothing -- pattern or engine is broken'
+printf 'an ordinary line of prose\n' | grep -qIiE "$PATTERN" \
+    && die 'scanner matches everything -- a pass proves nothing'
+```
+
+Both directions, for the same reason the guardrail suites check both: a pattern
+matching everything and a pattern matching nothing are indistinguishable if you
+only ever watch it match. Calibration has to run through the *same code path*
+as the real scan -- a check that proves the pattern works under a different
+grep than the one doing the scanning proves nothing about the scan.
+
+`.githooks/pre-push` now does exactly this. Every scan goes through one
+`matches_forbidden()` function, the hook probes it in both directions on every
+invocation, and a probe that comes back wrong refuses the push rather than
+certifying it. `.githooks/selftest.sh` checks the same two directions from
+outside, and no longer reads a tree with `git grep` either.
+
+---
+
 ## Bugs, and what they changed
 
 Every one below shipped, passed review by reading, and was found by running
@@ -446,6 +534,11 @@ pack files and errored on every ref it resolved. The mirror on disk was clean â€
 the corruption was introduced in transit. It never failed a bring-up outright,
 which is why it survived: it only made every publish log errors that looked like
 a damaged repository.
+
+**A history scan that reported zero because it never ran.** Described above.
+The shape worth remembering: the tool did not fail, it succeeded emptily, and
+an empty success reads as good news. Everything the gate now does about that
+follows from one accidental cross-check.
 
 **Two host defects that cost two full runs, now refused in preflight.** Docker
 Desktop's containerd image store made `kind load docker-image` fail on a pulled
