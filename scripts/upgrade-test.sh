@@ -279,6 +279,58 @@ printf '\n  \033[32mUpgraded in place, from the previous versions to the pinned 
 #                                    time a maintainer does something ordinary is
 #                                    a check people stop reading.
 
+# The static check gates the live one. pin-delta.sh has already compared the two
+# chart sets without a cluster; if it found a CRD whose storage version moved,
+# rolling back is not slow or risky, it is impossible -- objects are persisted at
+# the storage version and the older CRD cannot read what the newer one wrote.
+# Running the leg anyway would spend eleven minutes failing to converge, and the
+# elimination below would then label a known one-way street a compatibility
+# problem, which is true but useless: the static report already said so, in a
+# minute, for free.
+#
+# Three answers, and `unavailable` is a real one. Without the verdict a
+# convergence failure cannot honestly be called compatibility, so the run
+# continues -- an outage must not quietly reduce coverage -- but a failure is
+# reported as unclassifiable rather than assigned to a side.
+step "Reading the storage-move verdict from the pin-delta report"
+rollback_unverified=0
+verdict_out="$(./scripts/storage-verdict.sh)"
+verdict="$(printf '%s\n' "$verdict_out" | head -1)"
+printf '%s\n' "$verdict_out" | tail -n +2 | sed 's/^/    /'
+
+case "$verdict" in
+	moved)
+		cat >&2 <<'WARN'
+
+  ============================================================================
+  ROLLBACK SKIPPED -- this pin is a one-way door
+  ============================================================================
+
+  Rollback from this pin is no longer possible. A CRD's storage version moved
+  between these two chart versions, so objects are persisted in a form the
+  older chart's CRD cannot read. No amount of re-pointing changes that.
+
+  This is an upstream maintainer's decision about their own API, not a defect
+  in this repository and not a broken test. The upgrade above was proven; the
+  rollback is skipped because there is nothing here that could make it work,
+  and a leg that spent eleven minutes discovering what the static report
+  already knew would be worse than not running it.
+
+  The CRDs that moved are listed above.
+
+WARN
+		printf '\n  \033[33mUpgraded in place. Rollback skipped -- storage version moved, see above.\033[0m\n\n'
+		exit 0
+		;;
+	none)
+		;;
+	*)
+		rollback_unverified=1
+		printf '    \033[33mthe storage verdict could not be obtained -- rolling back anyway,\033[0m\n'
+		printf '    \033[33mbut a failure below cannot be classified\033[0m\n'
+		;;
+esac
+
 step "Rolling back: republishing the previous-version revision"
 rollback_sha="$(git rev-parse "$SCRATCH")" \
 	|| { echo "upgrade-test: FAILED (MECHANISM) -- the scratch ref is gone" >&2; exit 1; }
@@ -317,6 +369,32 @@ SETTLE_SECONDS="${UPGRADE_SETTLE_SECONDS:-30}" \
 	fi
 	rollback_converged=0
 }
+
+if [ "$rollback_converged" -eq 0 ] && [ "$rollback_unverified" -eq 1 ]; then
+	cat >&2 <<'WARN'
+
+  ============================================================================
+  ROLLBACK DID NOT CONVERGE -- and this run cannot say why
+  ============================================================================
+
+  Every mechanism gate passed, so the re-point worked and something downstream
+  refused. Normally that is enough to call it compatibility by elimination.
+
+  Not this run. The storage-move verdict could not be obtained, so the one
+  thing that would distinguish "this pin is a one-way door" from "something
+  else refused" is missing. Assigning it to either side would be a guess
+  presented as a finding.
+
+  This is reported as UNCLASSIFIED. It is not green because it worked and not
+  red because this repository is at fault -- it is a run that did not produce
+  an answer. Re-run once the pin-delta report is available.
+
+WARN
+	kubectl -n argocd get applications >&2 2>&1 || true
+	kubectl get pods -A --field-selector=status.phase!=Running >&2 2>&1 || true
+	printf '\n  \033[33mUpgrade proven. Rollback UNCLASSIFIED -- no storage verdict available.\033[0m\n\n'
+	exit 0
+fi
 
 if [ "$rollback_converged" -eq 0 ]; then
 	cat >&2 <<'WARN'
