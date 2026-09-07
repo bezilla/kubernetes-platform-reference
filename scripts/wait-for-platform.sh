@@ -42,6 +42,14 @@ INTERVAL=15
 # so the two behave alike.
 PERMANENT_STRIKES=3
 
+# A distinct code, and the reason is classification rather than tidiness. A
+# caller that reads "convergence failed" and concludes "then it must be an
+# upstream compatibility problem" would be wrong here: a source that cannot
+# resolve is the re-point having failed, which is ours. Collapsing it into the
+# generic exit 1 is what would make that reasoning unsound, so it gets its own
+# code and callers that classify can tell the two apart.
+E_UNRESOLVABLE=4
+
 # How long the converged state must HOLD before it is believed. Zero keeps the
 # old behaviour of returning on the first sample that looks right.
 #
@@ -141,7 +149,7 @@ while :; do
 				printf '    manifest generation failure, so waiting out the deadline cannot\n' >&2
 				printf '    change it. Check that scripts/publish.sh pushed the revision you\n' >&2
 				printf '    expect, and that the path exists in THAT revision.\n' >&2
-				exit 1
+				exit "$E_UNRESOLVABLE"
 			fi
 		else
 			permanent=0
