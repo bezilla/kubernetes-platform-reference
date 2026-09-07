@@ -432,6 +432,27 @@ ASSERT_VERSION_PREFIX='UPGRADE_FROM_' ./scripts/assert-installed-versions.sh || 
 	exit "$rc"
 }
 
+# Wait for the DATA PLANE before asking whether it serves. Every green signal
+# above is about Argo CD's Applications, and the Envoy proxy is not one of them:
+# the envoy-gateway Application installs the CONTROLLER, and the controller
+# creates the proxy Deployment, which carries no argocd instance label at all.
+# So the platform can be Synced, Healthy, held through the settle window, and
+# verified on the previous versions with the edge still coming back up.
+#
+# Run 34143528837 is that exact run. It did all of the above and then failed
+# here, because rolling envoy-gateway v1.9.1 -> v1.9.0 rebuilds the proxy and
+# nothing waited for it. The run before won the same race. Whichever side of a
+# rollout the assertion lands on is not a property of the platform.
+step "Waiting for the edge proxy to finish rolling"
+./scripts/wait-for-edge.sh "${EDGE_TIMEOUT_SECONDS:-300}" || {
+	rc=$?
+	case "$rc" in
+		1) echo "upgrade-test: FAILED -- the edge proxy never finished rolling after the rollback" >&2 ;;
+		*) echo "upgrade-test: FAILED -- could not read the edge proxy, so serving is unproven" >&2 ;;
+	esac
+	exit "$rc"
+}
+
 # The platform is not just a set of versions. This is the same proof the demo
 # suite uses, run against the rolled-back platform: the sample workload answered
 # over HTTPS through Gateway API on a cert-manager certificate.
