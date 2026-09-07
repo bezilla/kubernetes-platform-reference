@@ -288,7 +288,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 35
+    # The run step derives a 3000s (50m) ceiling from versions.env. This has to
+    # stay strictly ABOVE it, which is the whole point: `timeout` interrupts the
+    # script, which cleans up and says where it stopped, whereas GitHub killing
+    # the job first produces no diagnosis at all. At 35 this sat exactly on the
+    # old worst case, so the two could only ever fire together.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -321,7 +326,23 @@ jobs:
           git config user.name  "Paul Bezilla"
           git config user.email "bezilla@protonmail.com"
       - name: install the previous versions, then upgrade to the pinned ones
-        run: make upgrade-test
+        # The ceiling is derived from versions.env, the way the bring-up job's
+        # is, rather than written as a number that has to be remembered.
+        # upgrade-test.sh is sequential and every stage is bounded: `make up`
+        # by UP_TIMEOUT_SECONDS, the spec-propagation gate by its own 300s, the
+        # convergence wait by UP_TIMEOUT_SECONDS again, and the installed-state
+        # assertion by its own 300s. Ten minutes of slack covers the cluster,
+        # Argo CD and the two image builds, matching the bring-up job.
+        #
+        # `--signal=INT` rather than the default TERM: upgrade-test.sh and up.sh
+        # both trap INT, so an interrupted run cleans up its scratch ref and
+        # prints where it stopped. Being killed outright leaves neither.
+        run: |
+          # shellcheck disable=SC1091
+          source versions.env
+          ceiling=$(( UP_TIMEOUT_SECONDS + 300 + UP_TIMEOUT_SECONDS + 300 + 600 ))
+          echo "ceiling: ${ceiling}s (2 x UP_TIMEOUT ${UP_TIMEOUT_SECONDS} + 2 x 300 gate + 600 slack)"
+          timeout --signal=INT "$ceiling" make upgrade-test
 
   supply-chain:
     name: supply chain
