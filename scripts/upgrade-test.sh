@@ -110,6 +110,21 @@ before="$(running_versions)"; printf '%s\n' "$before"
 step "Publishing the pinned versions -- Argo CD upgrades in place from here"
 ./scripts/publish.sh 2>&1 | sed 's/^/    /'
 
+# Before asking whether the root rewrote anything, establish that there is a new
+# revision for it to have seen. Everything below this point infers the publish
+# landed from chart-version strings; this reads the git server and Argo CD
+# directly, so "the machinery worked" is observed rather than assumed.
+step "Confirming the publish landed and Argo CD resolved it"
+./scripts/assert-published-revision.sh "$(git rev-parse HEAD)" || {
+	rc=$?
+	case "$rc" in
+		1) echo "upgrade-test: FAILED -- publish reported success and the cluster is on another revision" >&2 ;;
+		2) echo "upgrade-test: FAILED -- could not read the published revision, so the publish is unproven" >&2 ;;
+		*) echo "upgrade-test: FAILED -- the published-revision check did not finish" >&2 ;;
+	esac
+	exit "$rc"
+}
+
 # Publishing does not make anything OutOfSync on its own. The root Application
 # has to notice the new commit and rewrite the eight child Application objects
 # before any child can begin pulling a new chart -- and until that happens every
