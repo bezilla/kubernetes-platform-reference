@@ -180,4 +180,24 @@ if [ "$before" = "$after" ]; then
 fi
 [ "$fail" -eq 0 ] || { printf '\nupgrade-test: %d component(s) did not reach the pinned version\n\n' "$fail" >&2; exit 1; }
 
+# --- 5. prove the CLUSTER moved, not just the specs ---------------------------
+# Everything above this line reads desired state. `after` is
+# .spec.source.targetRevision -- the version Argo CD was handed, not the one any
+# container is running -- and the convergence gate reads Argo CD's verdict on its
+# own work. The "converged in 0s" incident described at the top of this file was
+# caught only because the specs had not moved either; had they moved while the
+# pods did not, every gate so far would have passed.
+#
+# So the last word belongs to the running containers.
+step "Confirming the workloads are actually running the pinned versions"
+./scripts/assert-installed-versions.sh || {
+	rc=$?
+	case "$rc" in
+		1) echo "upgrade-test: FAILED -- Argo CD reported the upgrade; the workloads did not take it" >&2 ;;
+		2) echo "upgrade-test: FAILED -- could not read installed state, so the upgrade is unproven" >&2 ;;
+		*) echo "upgrade-test: FAILED -- installed-state assertion did not finish" >&2 ;;
+	esac
+	exit "$rc"
+}
+
 printf '\n  \033[32mUpgraded in place, from the previous versions to the pinned ones, still converged.\033[0m\n\n'
