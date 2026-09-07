@@ -44,6 +44,33 @@ PERMANENT_STRIKES=3
 start=$SECONDS
 unreachable=0
 permanent=0
+last_cond=''
+cond_repeats=0
+cond_since=0
+
+# Prints a condition the FIRST time it is seen and every time it CHANGES, never
+# on a repeat. A stalled Application is polled every INTERVAL seconds for as long
+# as the deadline allows -- argocd-repositories once sat unsynced for 373s, which
+# is 37 polls -- and printing the same sentence 37 times buries it in its own
+# repetition. Instead the message is printed once and its run is closed out with
+# how long it held, so a slow run reads as a short list of distinct states with
+# durations rather than a wall of identical lines.
+flush_cond() {
+	[ -n "$last_cond" ] || return 0
+	[ "$cond_repeats" -gt 1 ] || { last_cond=''; cond_repeats=0; return 0; }
+	printf '      %3ds  %s: ^ that condition held for %d polls (%ds)\n' \
+		"$elapsed" "$APP" "$cond_repeats" "$((elapsed - cond_since))" >&2
+	last_cond=''; cond_repeats=0
+}
+
+note_cond() {
+	local c="$1"
+	if [ -z "$c" ]; then flush_cond; return 0; fi
+	if [ "$c" = "$last_cond" ]; then cond_repeats=$((cond_repeats + 1)); return 0; fi
+	flush_cond
+	printf '      %3ds  %s: %s\n' "$elapsed" "$APP" "$c" >&2
+	last_cond="$c"; cond_repeats=1; cond_since="$elapsed"
+}
 
 while :; do
 	elapsed=$((SECONDS - start))
@@ -75,6 +102,7 @@ while :; do
 		"$elapsed" "$APP" "${sync:-<none>}" "${health:-<none>}"
 
 	if [ "$sync" = 'Synced' ] && [ "$health" = 'Healthy' ]; then
+		flush_cond
 		printf '      %s is Ready (%ds)\n' "$APP" "$elapsed"
 		exit 0
 	fi
@@ -90,6 +118,21 @@ while :; do
 	if [ "$sync" != 'Synced' ]; then
 		cond="$(kubectl -n argocd get application "$APP" -o json --request-timeout=20s 2>/dev/null \
 			| jq -r '[.status.conditions[]? | select(.type | test("Error")) | .message] | join(" | ")' 2>/dev/null || true)"
+
+		# Say what Argo CD actually said. This read already happened on every poll
+		# and its result was printed only when it matched the pattern below, so
+		# every OTHER condition was fetched and discarded. That is why 9ed392c
+		# closes with the root cause of the 905s incident still open: the evidence
+		# was in hand ~37 times and thrown away each time. argocd-repositories has
+		# since sat at Unknown/Healthy for 373s on a runner with the fast-fail
+		# never firing, which means the message was not "app path does not exist"
+		# and nobody knows what it was.
+		#
+		# Purely additive. The case below is untouched and the fast-fail behaves
+		# exactly as before; this only stops the diagnosis being deleted on the
+		# way past.
+		note_cond "$cond"
+
 		case "$cond" in
 			*'app path does not exist'*)
 				permanent=$((permanent + 1))
@@ -115,6 +158,7 @@ while :; do
 	fi
 
 	if [ "$elapsed" -ge "$DEADLINE_SECONDS" ]; then
+		flush_cond
 		printf '\nwait-for-app: FAILED -- %s did not become Ready within %ds (last: %s/%s)\n' \
 			"$APP" "$elapsed" "${sync:-<none>}" "${health:-<none>}" >&2
 		kubectl -n argocd get app "$APP" \
