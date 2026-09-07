@@ -297,6 +297,13 @@ step "Publishing this repository to the in-cluster Git server"
 echo "    Waiting for the Git server to report Ready now that it has a repository"
 kubectl -n platform-system wait --for=condition=available deploy/git-server --timeout=180s >/dev/null
 
+# Record what the git-server pod is BEFORE the install phase, so the check after
+# it can tell a steady pod from one that restarted or was replaced. The wait
+# above proves the readiness probe passed once; it says nothing about the pod
+# surviving the eight Applications installed after it.
+./scripts/assert-git-server-stable.sh record || \
+	echo "    (could not record the git-server baseline -- the check after the install will say so)"
+
 # --- 6. install the platform, one component at a time -------------------------
 # Argo CD sync waves order when the child Application OBJECTS are created. They
 # do not stop a child from syncing its own contents while the next child is
@@ -318,6 +325,28 @@ for manifest in platform/applications/*.yaml; do
 	apply_manifest "$manifest"
 	./scripts/wait-for-app.sh "$name" "${APP_TIMEOUT_SECONDS:-600}"
 done
+
+# Did the pod serving the repository stay up while all of that was fetching from
+# it? Reported, never fatal -- see the head of the script for why. This is here
+# to kill or confirm one candidate for the argocd-repositories stall, whose
+# captured condition text is a fetch dying mid-packfile:
+#
+#   curl 18 transfer closed with outstanding read data remaining
+#   fatal: fetch-pack: invalid index-pack output
+#
+# A clean result eliminates "the pod went away" and leaves "the server closed
+# the connection" standing. Both outcomes are worth having; neither is a failure.
+step "Checking the git-server stayed up through the install"
+# `|| rc=$?` and not a bare call: up.sh runs under `set -e`, so a non-zero exit
+# from a reporting check would abort the bring-up -- turning the finding into
+# precisely the hard failure this was decided not to be.
+rc=0
+./scripts/assert-git-server-stable.sh check || rc=$?
+case "$rc" in
+	0) ;;
+	1) echo "    ^ reported, not fatal -- the install continues" ;;
+	*) echo "    (the git-server stability check could not run; nothing is proven either way)" ;;
+esac
 
 # --- 7. hand over to Argo CD --------------------------------------------------
 # Every child already exists and already matches what this root syncs, so the
