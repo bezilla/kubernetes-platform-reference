@@ -70,6 +70,17 @@ note_cond() {
 	flush_cond
 	printf '      %3ds  %s: %s\n' "$elapsed" "$APP" "$c" >&2
 	last_cond="$c"; cond_repeats=1; cond_since="$elapsed"
+
+	# A fetch that died mid-transfer is the one failure nobody has ever seen both
+	# sides of. Capture them the first time such a condition appears -- the
+	# script is idempotent per run, and it reads logs that already exist rather
+	# than touching the exchange, so it cannot alter what it is describing.
+	case "$c" in
+		*'failed to list refs'*|*'index-pack'*|*'early EOF'*|*'RPC failed'*|*'Failed to fetch'*)
+			./scripts/capture-fetch-failure.sh "$APP" "$elapsed" || \
+				printf '      %3ds  %s: the failure capture could not run\n' "$elapsed" "$APP" >&2
+			;;
+	esac
 }
 
 while :; do
