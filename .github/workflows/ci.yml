@@ -215,6 +215,17 @@ jobs:
           timeout --signal=INT "$ceiling" make up 2>&1 | tee .ci-artifacts/make-up.log
           exit "${PIPESTATUS[0]}"
 
+      - name: git identity for the scratch commit
+        # commit-tree needs an author. The ref is deleted on exit and never
+        # published anywhere but the in-cluster mirror.
+        #
+        # Here for the same reason the upgrade job has it: `make demo` runs
+        # demo-gitops, which builds its commit with git plumbing, and a runner
+        # has no identity configured. Without this the leg reached demo-gitops
+        # and died on "fatal: empty ident name ... not allowed", exit 128.
+        run: |
+          git config user.name  "Paul Bezilla"
+          git config user.email "bezilla@protonmail.com"
       - name: make demo
         run: |
           source versions.env
