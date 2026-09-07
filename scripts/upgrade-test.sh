@@ -161,7 +161,12 @@ while :; do
 	sleep 10
 done
 
+# SETTLE_SECONDS here and not in up.sh's call: the risk this guards is a verdict
+# read in the instant between a sync finishing and its PostSync hook or selfHeal
+# starting, and that instant belongs to an upgrade, not to a build from nothing.
+# Paying it once, where it means something, rather than on every bring-up.
 step "Waiting for every Application to converge on the new versions"
+SETTLE_SECONDS="${UPGRADE_SETTLE_SECONDS:-30}" \
 ./scripts/wait-for-platform.sh "${UP_TIMEOUT_SECONDS:-900}" || {
 	echo "upgrade-test: FAILED -- the platform did not converge after the upgrade" >&2
 	kubectl -n argocd get applications >&2
