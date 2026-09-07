@@ -104,6 +104,13 @@ check-versions: ## Prove versions.env agrees with every Application manifest
 check-environments: ## Render every environment for every tenant, and check it
 	@./scripts/check-environments.sh
 
+# Not part of `make check`. It is the only target here that reaches the network
+# for something other than an image, and it reports rather than passes or fails
+# -- exit 1 means there is something to read, not that anything is broken.
+.PHONY: pin-delta
+pin-delta: ## What a pin bump changed: storage versions, served versions, resources, CRD fields
+	@./scripts/pin-delta.sh
+
 .PHONY: check
 check: lint check-versions check-environments policy-test identity ## Everything CI runs that does not need a cluster
 
