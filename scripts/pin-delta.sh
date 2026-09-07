@@ -38,6 +38,21 @@
 #   field removed           The pinned chart dropped it. Objects setting it lose
 #                           it on the way forward; it returns on the way back.
 #
+#   constraint tightened    The only one of the six with a hazard in the
+#                           direction this platform actually deploys. The five
+#                           above ask what a ROLLBACK would lose -- a path not
+#                           tested here yet. A tightened constraint breaks
+#                           FORWARD: if a chart narrows a regex and a live object
+#                           holds a value the new one rejects, the upgrade fails.
+#                           Nothing above can see it, because the field is
+#                           present on both sides and only its validation moved.
+#
+#                           Scoped to tightening, not to change. Loosening is
+#                           safe forward and is not reported: a diff of every
+#                           keyword over seventeen thousand field paths is mostly
+#                           reworded descriptions, and a report people skip is
+#                           worse than no report.
+#
 # IT DOES NOT FAIL THE BUILD. Everything here is a fact about a decision an
 # upstream maintainer made, not a defect in this repository. A check that goes
 # red every time someone upstream does something normal is a check people learn
@@ -81,7 +96,7 @@ fi
 mkdir -p "$WORK"
 
 findings=0
-declare -a F_STORAGE=() F_SERVED=() F_RESOURCE=() F_ADDED=() F_REMOVED=()
+declare -a F_STORAGE=() F_SERVED=() F_RESOURCE=() F_ADDED=() F_REMOVED=() F_TIGHTEN=()
 
 note() { printf '  %s\n' "$1"; }
 
@@ -132,11 +147,49 @@ model() {       # rendered.yaml prefix
 		| select($f != "")
 		| "\($p[0])\t\($p[$vj+1])\t\($f)"' "$all" | sort -u > "$pre.rawfields" || return 1
 
+	# Constraint keywords, for the sixth check. Same stream, filtered to the
+	# keywords that can make a valid object invalid -- description and default
+	# are deliberately absent, and they are most of the volume.
+	#
+	# `required` is a sibling of `properties`, not a key under the field it
+	# constrains, so its VALUE names the child: it is re-keyed onto that child.
+	jq -r --stream '
+		select(length == 2) | .[0] as $p | .[1] as $v
+		| ($p | index("openAPIV3Schema")) as $i
+		| select($i != null)
+		| ($p | index("versions")) as $vj
+		| select($vj != null)
+		| [ range($i + 1; ($p | length)) | select($p[. - 1] == "properties") ] as $ix
+		| (if ($ix | length) > 0 then ($ix | max) else $i end) as $last
+		| ([ $ix[] | $p[.] ] | join(".")) as $f0
+		| (if $f0 == "" then "(root)" else $f0 end) as $f
+		| ($p[($last + 1):] | map(select(type == "string")) | join(".")) as $kw
+		| select($kw != "")
+		| ($kw | split(".") | last) as $leaf
+		| select($leaf | IN("type","pattern","enum","required","nullable",
+		                    "minLength","minimum","minItems",
+		                    "maxLength","maximum","maxItems"))
+		| if $leaf == "required"
+		  then "\($p[0])\t\($p[$vj+1])\t\(if $f0 == "" then $v else "\($f0).\($v)" end)\t\($kw)\ttrue"
+		  else "\($p[0])\t\($p[$vj+1])\t\($f)\t\($kw)\t\($v)"
+		  end' "$all" | sort -u > "$pre.rawconstraints" || return 1
+
 	# Resolve (doc,versionIndex) to (crd,version) so the two sides are comparable
 	# by name -- document order is an artefact of rendering, not of the chart.
 	awk -F'\t' 'NR==FNR { key[$1"\t"$2] = $3"\t"$4; next }
 	            { k = $1"\t"$2; if (k in key) print key[k]"\t"$3 }' \
 		"$pre.vermap" "$pre.rawfields" | sort -u > "$pre.fields"
+
+	# Same resolution, then collapse enum members into one comma-joined row per
+	# (crd, version, field, keyword). Grouped with sort + awk rather than awk's
+	# asort, which is a gawk extension and absent from the awk on a mac.
+	awk -F'\t' 'NR==FNR { key[$1"\t"$2] = $3"\t"$4; next }
+	            { k = $1"\t"$2; if (k in key) print key[k]"\t"$3"\t"$4"\t"$5 }' \
+		"$pre.vermap" "$pre.rawconstraints" \
+	| sort -t"$(printf '\t')" -k1,4 -k5,5 \
+	| awk -F'\t' '{ k = $1 FS $2 FS $3 FS $4
+	                 if (k == pk) { v = v "," $5 } else { if (pk != "") print pk FS v; pk = k; v = $5 } }
+	               END { if (pk != "") print pk FS v }' > "$pre.constraints"
 	rm -f "$all"
 }
 
@@ -230,6 +283,89 @@ for row in "${COMPONENTS[@]}"; do
 		done < "$WORK/$name.removed"
 	fi
 
+	# 6. constraint tightening.
+	#
+	# The other five ask whether a rollback would lose something. This one asks
+	# whether the UPGRADE would reject something already in the cluster, which is
+	# the direction this platform actually deploys -- and the only hazard here
+	# that bites on the way forward. If a chart tightens a regex and a live
+	# object does not match it, the sync fails; nothing in checks 1-5 sees that,
+	# because the field is present on both sides and only its validation moved.
+	#
+	# Scoped to TIGHTENING. A diff of every keyword across seventeen thousand
+	# field paths reports mostly nothing anyone can act on, and a report people
+	# skip is worse than no report. Loosening is safe forward and is not listed.
+	#
+	# A positive self-test rather than a silent empty result: if a component has
+	# CRD versions but yielded no constraints at all, that is an extraction
+	# failure, and it exits rather than reporting a clean bill of health. The
+	# storage check in this file already shipped once producing nothing because
+	# its error went to /dev/null, and that must not be repeatable here.
+	for side in prev pin; do
+		if [ -s "$WORK/$name-$side.vermap" ] && [ ! -s "$WORK/$name-$side.constraints" ]; then
+			printf 'pin-delta: %s (%s) declares %s CRD version(s) but produced no constraints.\n' \
+				"$name" "$side" "$(wc -l < "$WORK/$name-$side.vermap" | tr -d ' ')" >&2
+			printf 'pin-delta: that is an extraction failure, not an absence of constraints.\n' >&2
+			exit "$E_PRECONDITION"
+		fi
+	done
+
+	if [ -s "$WORK/$name.common" ]; then
+		comm -12 "$WORK/$name.pf" "$WORK/$name.nf" > "$WORK/$name.commonfields"
+		awk -F'\t' -v OFS='\t' -v cff="$WORK/$name.commonfields" -v pvf="$P.constraints" '
+			function leafof(kw,   m, arr) { m = split(kw, arr, "."); return arr[m] }
+			function isnum(x) { return (x ~ /^-?[0-9]+(\.[0-9]+)?$/) }
+			function emit(c, v, f, k, why, a, b) { print c, v, f, k, why, a, b }
+			FILENAME == cff { cf[$1 FS $2 FS $3] = 1; next }
+			FILENAME == pvf { p[$1 FS $2 FS $3 FS $4] = $5; next }
+			{ n[$1 FS $2 FS $3 FS $4] = $5 }
+			END {
+				for (k in n) {
+					split(k, a, "\t"); crd = a[1]; ver = a[2]; fld = a[3]; kw = a[4]
+					if (!((crd FS ver FS fld) in cf)) continue
+					leaf = leafof(kw); nv = n[k]; had = (k in p); pv = had ? p[k] : ""
+					if (leaf == "pattern") {
+						if (!had) emit(crd, ver, fld, kw, "pattern added", "(none)", nv)
+						else if (pv != nv) emit(crd, ver, fld, kw, "pattern changed", pv, nv)
+					} else if (leaf == "type") {
+						if (had && pv != nv) emit(crd, ver, fld, kw, "type changed", pv, nv)
+					} else if (leaf == "enum") {
+						if (!had) emit(crd, ver, fld, kw, "enum added, was unconstrained", "(none)", nv)
+						else {
+							nn = split(nv, na, ","); delete seen
+							for (i = 1; i <= nn; i++) seen[na[i]] = 1
+							np = split(pv, pa, ","); lost = ""
+							for (i = 1; i <= np; i++) if (!(pa[i] in seen)) lost = lost (lost == "" ? "" : ",") pa[i]
+							if (lost != "") emit(crd, ver, fld, kw, "enum narrowed, lost " lost, pv, nv)
+						}
+					} else if (leaf == "required") {
+						if (!had) emit(crd, ver, fld, kw, "became required", "(optional)", "required")
+					} else if (leaf == "nullable") {
+						if (had && pv == "true" && nv == "false") emit(crd, ver, fld, kw, "nullable true to false", pv, nv)
+					} else if (leaf == "minLength" || leaf == "minimum" || leaf == "minItems") {
+						if (!had) emit(crd, ver, fld, kw, "lower bound added", "(none)", nv)
+						else if (isnum(pv) && isnum(nv) && nv + 0 > pv + 0) emit(crd, ver, fld, kw, "lower bound raised", pv, nv)
+					} else if (leaf == "maxLength" || leaf == "maximum" || leaf == "maxItems") {
+						if (!had) emit(crd, ver, fld, kw, "upper bound added", "(none)", nv)
+						else if (isnum(pv) && isnum(nv) && nv + 0 < pv + 0) emit(crd, ver, fld, kw, "upper bound lowered", pv, nv)
+					}
+				}
+				# nullable that disappears defaults to false, which is tighter.
+				for (k in p) {
+					if (k in n) continue
+					split(k, a, "\t"); crd = a[1]; ver = a[2]; fld = a[3]; kw = a[4]
+					if (!((crd FS ver FS fld) in cf)) continue
+					if (leafof(kw) == "nullable" && p[k] == "true")
+						emit(crd, ver, fld, kw, "nullable true to absent, defaults false", "true", "(absent)")
+				}
+			}' "$WORK/$name.commonfields" "$P.constraints" "$N.constraints" \
+			| sort > "$WORK/$name.tighten"
+		while IFS=$'\t' read -r crd v f kw why a b; do
+			[ -n "${f:-}" ] || continue
+			F_TIGHTEN+=("$name|$crd|$v|$f|$kw|$why|$a|$b"); findings=$((findings + 1))
+		done < "$WORK/$name.tighten"
+	fi
+
 	if [ "$findings" -eq "$before" ]; then
 		printf '    \033[32mno delta\033[0m  %d resources, %d CRD versions compared\n' \
 			"$(wc -l < "$N.resources" | tr -d ' ')" "$(wc -l < "$N.vermap" | tr -d ' ')"
@@ -286,6 +422,25 @@ if [ "${#F_REMOVED[@]}" -gt 0 ]; then
 	note "it when the pin is applied; the field returns on the way back."
 	for f in "${F_REMOVED[@]}"; do IFS='|' read -r c crd v fp <<<"$f"
 		printf '    %-16s %-40s %-10s %s\n' "$c" "$crd" "$v" "$fp"; done
+fi
+
+if [ "${#F_TIGHTEN[@]}" -gt 0 ]; then
+	printf '\n  \033[1mCONSTRAINT TIGHTENED -- this one breaks FORWARD\033[0m\n'
+	note "Every section above asks what a rollback would lose. This one asks what"
+	note "the UPGRADE will reject. The field still exists on both sides; only its"
+	note "validation moved, so nothing above can see it."
+	note ""
+	note "An object already in the cluster that satisfied the previous rule and"
+	note "does not satisfy the pinned one makes the sync fail when the pin lands."
+	note "Check whether anything actually holds a value these would now reject."
+	note ""
+	note "A changed pattern is reported as suspect, not as broken: proving one"
+	note "regex accepts everything another does is not something this can do"
+	note "cheaply, so it says the regex moved and leaves the reading to you."
+	for f in "${F_TIGHTEN[@]}"; do IFS='|' read -r c crd v fp kw why a b <<<"$f"
+		printf '    %-14s %-34s %-9s %s\n' "$c" "$crd" "$v" "$fp"
+		printf '    %-14s   %s (%s)\n' "" "$why" "$kw"
+		printf '    %-14s   %s  ->  %s\n' "" "$a" "$b"; done
 fi
 
 printf '\n'

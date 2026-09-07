@@ -108,7 +108,7 @@ check-environments: ## Render every environment for every tenant, and check it
 # for something other than an image, and it reports rather than passes or fails
 # -- exit 1 means there is something to read, not that anything is broken.
 .PHONY: pin-delta
-pin-delta: ## What a pin bump changed: storage versions, served versions, resources, CRD fields
+pin-delta: ## What a pin bump changed: storage/served versions, resources, CRD fields, tightened constraints
 	@./scripts/pin-delta.sh
 
 .PHONY: check
