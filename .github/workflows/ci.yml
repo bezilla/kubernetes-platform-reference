@@ -288,12 +288,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # The run step derives a 3000s (50m) ceiling from versions.env. This has to
+    # The run step derives a 4860s (81m) ceiling from versions.env. This has to
     # stay strictly ABOVE it, which is the whole point: `timeout` interrupts the
     # script, which cleans up and says where it stopped, whereas GitHub killing
     # the job first produces no diagnosis at all. At 35 this sat exactly on the
     # old worst case, so the two could only ever fire together.
-    timeout-minutes: 55
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -328,11 +328,22 @@ jobs:
       - name: install the previous versions, then upgrade to the pinned ones
         # The ceiling is derived from versions.env, the way the bring-up job's
         # is, rather than written as a number that has to be remembered.
-        # upgrade-test.sh is sequential and every stage is bounded: `make up`
-        # by UP_TIMEOUT_SECONDS, the spec-propagation gate by its own 300s, the
-        # convergence wait by UP_TIMEOUT_SECONDS again, and the installed-state
-        # assertion by its own 300s. Ten minutes of slack covers the cluster,
-        # Argo CD and the two image builds, matching the bring-up job.
+        # upgrade-test.sh is sequential and every stage is bounded. It now runs
+        # three phases, and the upgrade and rollback phases have the same four
+        # bounded stages each: the published-revision check (180s), the
+        # spec-propagation gate (300s), the convergence wait (UP_TIMEOUT), and
+        # the installed-state assertion (300s). Plus one `make up` at the front,
+        # also UP_TIMEOUT.
+        #
+        # 900 + (180+300+900+300) + (180+300+900+300) = 4260s, and ten minutes of
+        # slack for the cluster, Argo CD and the two image builds gives 4860s.
+        # The previous formula also under-counted: it predated the
+        # published-revision check and never included its 180s.
+        #
+        # For scale, the whole thing takes about eleven minutes in practice. This
+        # is a bound on the pathological case where every wait runs to its
+        # deadline, not a budget -- and if it is ever hit the answer is to find
+        # out why, not to raise it.
         #
         # `--signal=INT` rather than the default TERM: upgrade-test.sh and up.sh
         # both trap INT, so an interrupted run cleans up its scratch ref and
@@ -340,8 +351,9 @@ jobs:
         run: |
           # shellcheck disable=SC1091
           source versions.env
-          ceiling=$(( UP_TIMEOUT_SECONDS + 300 + UP_TIMEOUT_SECONDS + 300 + 600 ))
-          echo "ceiling: ${ceiling}s (2 x UP_TIMEOUT ${UP_TIMEOUT_SECONDS} + 2 x 300 gate + 600 slack)"
+          phase=$(( 180 + 300 + UP_TIMEOUT_SECONDS + 300 ))
+          ceiling=$(( UP_TIMEOUT_SECONDS + phase + phase + 600 ))
+          echo "ceiling: ${ceiling}s (make up ${UP_TIMEOUT_SECONDS} + 2 x ${phase} upgrade/rollback + 600 slack)"
           timeout --signal=INT "$ceiling" make upgrade-test
 
   pin-delta:
