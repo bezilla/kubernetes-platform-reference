@@ -72,16 +72,23 @@ INTERVAL=10
 # chart 0.172.0 ships app 0.159.0. versions.env carries both, so this compares
 # against a pin rather than against a number derived here.
 #
+# ASSERT_VERSION_PREFIX selects WHICH set of pins. Empty means the pinned
+# versions; UPGRADE_FROM_ means the ones the upgrade started from, which is what
+# the rollback leg asserts after it re-points. Parameterised rather than copied:
+# a second near-identical script is two files that have to stay in step, and the
+# only thing that differs between the two directions is which variable is read.
+VP="${ASSERT_VERSION_PREFIX:-}"
+
 # namespace : deployment : container : expected-version variable
 ROWS=(
-	"cert-manager:cert-manager:cert-manager-controller:CERT_MANAGER_APP_VERSION"
-	"cert-manager:cert-manager-webhook:cert-manager-webhook:CERT_MANAGER_APP_VERSION"
-	"cert-manager:cert-manager-cainjector:cert-manager-cainjector:CERT_MANAGER_APP_VERSION"
-	"envoy-gateway-system:envoy-gateway:envoy-gateway:ENVOY_GATEWAY_APP_VERSION"
-	"kyverno:kyverno-admission-controller:kyverno:KYVERNO_APP_VERSION"
-	"kyverno:kyverno-background-controller:controller:KYVERNO_APP_VERSION"
-	"kyverno:kyverno-reports-controller:controller:KYVERNO_APP_VERSION"
-	"platform-observability:otel-collector-opentelemetry-collector:opentelemetry-collector:OTEL_COLLECTOR_APP_VERSION"
+	"cert-manager:cert-manager:cert-manager-controller:${VP}CERT_MANAGER_APP_VERSION"
+	"cert-manager:cert-manager-webhook:cert-manager-webhook:${VP}CERT_MANAGER_APP_VERSION"
+	"cert-manager:cert-manager-cainjector:cert-manager-cainjector:${VP}CERT_MANAGER_APP_VERSION"
+	"envoy-gateway-system:envoy-gateway:envoy-gateway:${VP}ENVOY_GATEWAY_APP_VERSION"
+	"kyverno:kyverno-admission-controller:kyverno:${VP}KYVERNO_APP_VERSION"
+	"kyverno:kyverno-background-controller:controller:${VP}KYVERNO_APP_VERSION"
+	"kyverno:kyverno-reports-controller:controller:${VP}KYVERNO_APP_VERSION"
+	"platform-observability:otel-collector-opentelemetry-collector:opentelemetry-collector:${VP}OTEL_COLLECTOR_APP_VERSION"
 )
 
 command -v kubectl >/dev/null 2>&1 || {
