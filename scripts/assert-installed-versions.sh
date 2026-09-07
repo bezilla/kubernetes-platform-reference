@@ -34,6 +34,20 @@
 # asked for, which during a rollout is already the new image on a pod that has
 # not started it. containerStatuses is the runtime's report of what it actually
 # pulled and ran.
+#
+# And the image alone is not enough. A pod can be Running, reporting exactly the
+# pinned image, and still not be serving: a failing readiness probe leaves it
+# Running and not Ready, and a Deployment whose controller has not yet observed
+# the update reports last generation's replica counts. Both look identical to a
+# finished rollout if you only read images off running pods.
+#
+# So the rollout itself is asserted too: observedGeneration caught up with
+# metadata.generation, and updated == ready == available == desired. That is the
+# difference between "the pinned version is installed" and "the pinned version
+# was written down somewhere". This file's own history is the argument for going
+# the extra step -- the "converged in 0s" incident was desired state agreeing
+# with itself, and each fix since has moved the read one layer closer to what is
+# actually serving traffic. This is that layer.
 
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -91,6 +105,22 @@ running_images() {
 		-o jsonpath="{range .items[*]}{range .status.containerStatuses[?(@.name=='${ctr}')]}{.image}{\"\\n\"}{end}{end}" 2>/dev/null || return 1
 }
 
+# generation, observedGeneration, desired, updated, ready, available -- one call,
+# so every number describes the same moment. Absent status fields default to a
+# value that cannot be mistaken for success: observedGeneration to -1 rather than
+# to generation, and the replica counts to 0.
+rollout_state() {  # ns dep
+	kubectl -n "$1" get deploy "$2" -o json 2>/dev/null | jq -r '
+		[ (.metadata.generation // 0),
+		  (.status.observedGeneration // -1),
+		  (.spec.replicas // 1),
+		  (.status.updatedReplicas // 0),
+		  (.status.readyReplicas // 0),
+		  (.status.availableReplicas // 0),
+		  (.status.replicas // 0),
+		  (.status.unavailableReplicas // 0) ] | @tsv' 2>/dev/null
+}
+
 dump_state() {
 	printf '\nassert-installed-versions: state at the deadline:\n' >&2
 	for row in "${ROWS[@]}"; do
@@ -104,11 +134,37 @@ dump_state() {
 start=$SECONDS
 while :; do
 	elapsed=$((SECONDS - start))
-	wrong=0; unreadable=0; pending=0; report=''
+	wrong=0; unreadable=0; pending=0; stalled=0; report=''
 
 	for row in "${ROWS[@]}"; do
 		IFS=':' read -r ns dep ctr var <<<"$row"
 		want="${!var}"
+
+		# Rollout first: an unfinished rollout explains a wrong image, and
+		# reporting the image alone would name the symptom rather than the cause.
+		if ! rs="$(rollout_state "$ns" "$dep")" || [ -z "$rs" ]; then
+			unreadable=$((unreadable + 1))
+			report="${report}$(printf '\n    \033[31mUNREADABLE\033[0m %s/%s -- could not read the Deployment rollout state' "$ns" "$dep")"
+			continue
+		fi
+		IFS=$'\t' read -r gen obs desired updated ready avail total unavail <<<"$rs"
+		# total != updated is the condition that matters and the one a first pass
+		# misses. A stalled rollout on a single-replica Deployment reports
+		# generation observed, updated, ready and available ALL equal to desired:
+		# the surge pod exists so updatedReplicas counts it, while readyReplicas
+		# and availableReplicas count the OLD pod that is still serving. Every
+		# number agrees and nothing is rolling. status.replicas is 2 against
+		# updatedReplicas 1 -- the old ReplicaSet has not gone away -- which is
+		# precisely what `kubectl rollout status` waits on, and it was the only
+		# field that noticed. Verified against a live ImagePullBackOff.
+		if [ "$obs" != "$gen" ] || [ "$updated" != "$desired" ] \
+		   || [ "$ready" != "$desired" ] || [ "$avail" != "$desired" ] \
+		   || [ "$total" != "$updated" ] || [ "$unavail" != "0" ]; then
+			stalled=$((stalled + 1))
+			report="${report}$(printf '\n    \033[31mSTALLED\033[0m    %s/%s -- rollout not complete: generation %s observed %s, desired %s updated %s ready %s available %s, replicas %s unavailable %s' \
+				"$ns" "$dep" "$gen" "$obs" "$desired" "$updated" "$ready" "$avail" "$total" "$unavail")"
+			continue
+		fi
 
 		if ! images="$(running_images "$ns" "$dep" "$ctr")"; then
 			unreadable=$((unreadable + 1))
@@ -154,7 +210,7 @@ while :; do
 		fi
 	done
 
-	if [ "$wrong" -eq 0 ] && [ "$unreadable" -eq 0 ] && [ "$pending" -eq 0 ]; then
+	if [ "$wrong" -eq 0 ] && [ "$unreadable" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$stalled" -eq 0 ]; then
 		printf '%b\n' "$report"
 		printf '\n  \033[32mInstalled state matches the pins: %d containers across %d Deployments.\033[0m\n' \
 			"${#ROWS[@]}" "${#ROWS[@]}"
@@ -180,11 +236,22 @@ while :; do
 			dump_state
 			exit "$E_PRECONDITION"
 		fi
+		# A rollout that is still incomplete at the deadline was read successfully
+		# and is genuinely not finished, which is a failed assertion rather than a
+		# harness that could not tell. Argo CD has already called this Application
+		# Healthy by the time this runs, so an unfinished rollout here is a real
+		# disagreement between Argo's verdict and the Deployment's own status.
+		if [ "$stalled" -gt 0 ]; then
+			printf '\nassert-installed-versions: FAILED -- %d rollout(s) never completed within %ds.\n' "$stalled" "$elapsed" >&2
+			printf 'assert-installed-versions: the spec carries the pinned version; the pods do not serve it.\n' >&2
+			dump_state
+			exit "$E_FAILED"
+		fi
 		printf '\nassert-installed-versions: %d Deployment(s) still had no running pod after %ds.\n' "$pending" "$elapsed" >&2
 		dump_state
 		exit "$E_HARNESS"
 	fi
 
-	printf '  %3ds  waiting on %d Deployment(s) with no running pod\n' "$elapsed" "$pending"
+	printf '  %3ds  waiting: %d with no running pod, %d mid-rollout\n' "$elapsed" "$pending" "$stalled"
 	sleep "$INTERVAL"
 done
