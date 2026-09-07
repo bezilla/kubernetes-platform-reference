@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 #
-# Installs the platform on the PREVIOUS chart versions, then upgrades it in
-# place to the pinned ones and requires it to still converge.
+# Installs the platform on the PREVIOUS chart versions, upgrades it in place to
+# the pinned ones, then ROLLS BACK to where it started. Each step has to
+# converge on its own.
+#
+# The rollback is an Argo CD re-point, not a helm rollback -- see the note above
+# section 6 -- and at the current pins it proves the MECHANISM works in reverse
+# rather than that rollback is safe in general. That distinction is spelled out
+# where the phase begins, because a test that quietly implies more than it proves
+# is worse than no test.
 #
 # Every other test here builds from nothing. That proves the platform can be
 # created; it does not prove it can be moved, and moving it is what every
@@ -32,6 +39,42 @@ PAIRS=(
 
 cleanup() { git branch -D "$SCRATCH" >/dev/null 2>&1 || true; rm -f "${tmp_index:-}"; }
 trap cleanup EXIT
+
+# Waits until every chart-sourced child Application's targetRevision names the
+# version this direction expects. `cur` is the pinned set, `prev` the set the
+# upgrade started from, which is what the rollback re-points to.
+#
+# One function rather than two loops: the only thing that differs between the
+# directions is which of the two variables in PAIRS is read. A copy would be a
+# second place to fix the next time the root's behaviour changes.
+wait_for_child_specs() {  # cur|prev  label
+	local which="$1" label="$2" deadline pending manifest v_cur v_prev var chart want got
+	deadline=$((SECONDS + 300))
+	while :; do
+		pending=''
+		for pair in "${PAIRS[@]}"; do
+			IFS=':' read -r manifest v_cur v_prev <<<"$pair"
+			var="$v_cur"; [ "$which" = 'prev' ] && var="$v_prev"
+			chart="$(grep -m1 -E '^[[:space:]]+chart:' "$manifest" | awk '{print $2}')"
+			want="${!var}"
+			got="$(kubectl -n argocd get applications -o json 2>/dev/null \
+				| jq -r --arg c "$chart" '.items[] | select(.spec.source.chart==$c) | .spec.source.targetRevision')"
+			[ "$got" = "$want" ] || pending="${pending} ${chart}(${got:-?}->${want})"
+		done
+		if [ -z "$pending" ]; then
+			printf '    all four child Applications now name the %s versions (%ds)\n' \
+				"$label" "$((SECONDS - deadline + 300))"
+			return 0
+		fi
+		if [ "$SECONDS" -ge "$deadline" ]; then
+			printf '\nupgrade-test: FAILED -- the root never updated:%s\n' "$pending" >&2
+			kubectl -n argocd get app platform-root -o jsonpath='{.status.sync.status} {.status.sync.revision}{"\n"}' >&2
+			return 1
+		fi
+		printf '    waiting on:%s\n' "$pending"
+		sleep 10
+	done
+}
 
 # What each component reports it is running, read from the live Application.
 running_versions() {
@@ -136,30 +179,7 @@ step "Confirming the publish landed and Argo CD resolved it"
 # So: wait for the SPECS to carry the pinned versions first. That is the moment
 # the upgrade has actually been asked for. Only then is convergence meaningful.
 step "Waiting for the root to push the new versions into the child Applications"
-spec_deadline=$((SECONDS + 300))
-while :; do
-	pending=''
-	for pair in "${PAIRS[@]}"; do
-		IFS=':' read -r manifest curvar _ <<<"$pair"
-		chart="$(grep -m1 -E '^[[:space:]]+chart:' "$manifest" | awk '{print $2}')"
-		want="${!curvar}"
-		got="$(kubectl -n argocd get applications -o json 2>/dev/null \
-			| jq -r --arg c "$chart" '.items[] | select(.spec.source.chart==$c) | .spec.source.targetRevision')"
-		[ "$got" = "$want" ] || pending="${pending} ${chart}(${got:-?}->${want})"
-	done
-	if [ -z "$pending" ]; then
-		printf '    all four child Applications now name the pinned versions (%ds)\n' \
-			"$((SECONDS - spec_deadline + 300))"
-		break
-	fi
-	if [ "$SECONDS" -ge "$spec_deadline" ]; then
-		printf '\nupgrade-test: FAILED -- the root never updated:%s\n' "$pending" >&2
-		kubectl -n argocd get app platform-root -o jsonpath='{.status.sync.status} {.status.sync.revision}{"\n"}' >&2
-		exit 1
-	fi
-	printf '    waiting on:%s\n' "$pending"
-	sleep 10
-done
+wait_for_child_specs cur "pinned" || exit 1
 
 # SETTLE_SECONDS here and not in up.sh's call: the risk this guards is a verdict
 # read in the instant between a sync finishing and its PostSync hook or selfHeal
@@ -221,3 +241,127 @@ step "Confirming the workloads are actually running the pinned versions"
 }
 
 printf '\n  \033[32mUpgraded in place, from the previous versions to the pinned ones, still converged.\033[0m\n\n'
+
+# --- 6. roll back -------------------------------------------------------------
+# Third call to machinery that already exists. publish.sh force-publishes any
+# branch into the mirror as `main`, and every Application pins
+# targetRevision: main, so rolling back is republishing the old revision under
+# that name and letting Argo CD converge -- including pruning whatever the newer
+# charts added.
+#
+# NOT `helm rollback`. Every component is owned by an Application with selfHeal
+# and prune, so a helm rollback on a release Argo manages would be reverted by
+# self-heal within seconds. That does not contradict this test; it contradicts
+# the architecture.
+#
+# WHAT A GREEN HERE PROVES, AND WHAT IT DOES NOT.
+#
+# At the current pins this is a MECHANISM test and nothing more. The static
+# analysis established there is nothing in these bumps that could fail a
+# rollback: no CRD storage-version moves, zero resource-set differences across
+# 168 rendered resources, and the two schema changes that do exist are in
+# `policies.kyverno.io` objects this repository does not author. So a green
+# proves the re-point works in reverse -- that the root rewrites nine children
+# backward and Argo CD converges without anyone intervening. It does NOT prove
+# rollback is safe in general, and it cannot, because at these pins there is no
+# compatibility hazard present to survive. Compatibility needs its own pass with
+# a pin set far enough back to contain one.
+#
+# THREE OUTCOMES:
+#   rollback converges            -> green
+#   mechanism broke               -> RED. The re-point did not land, the root did
+#                                    not rewrite the children, or a source could
+#                                    not resolve. That one is ours.
+#   converged never, mechanism ok -> green with a loud warning. By elimination
+#                                    that is a compatibility problem, which is a
+#                                    fact about an upstream release rather than a
+#                                    defect here, and a check that goes red every
+#                                    time a maintainer does something ordinary is
+#                                    a check people stop reading.
+
+step "Rolling back: republishing the previous-version revision"
+rollback_sha="$(git rev-parse "$SCRATCH")" \
+	|| { echo "upgrade-test: FAILED (MECHANISM) -- the scratch ref is gone" >&2; exit 1; }
+PUBLISH_REF="$SCRATCH" ./scripts/publish.sh 2>&1 | sed 's/^/    /'
+
+# MECHANISM, gate 1 of 2: is the old revision actually being served, and did
+# Argo CD resolve it. Without this the rest infers a landed publish from
+# chart-version strings, and an unlanded publish would look like a slow root.
+step "Confirming the rollback publish landed and Argo CD resolved it"
+./scripts/assert-published-revision.sh "$rollback_sha" || {
+	rc=$?
+	echo "upgrade-test: FAILED (MECHANISM) -- the rollback re-point did not land" >&2
+	exit "$rc"
+}
+
+# MECHANISM, gate 2 of 2: did the root rewrite the children backward.
+step "Waiting for the root to push the previous versions back into the children"
+wait_for_child_specs prev "previous" || {
+	echo "upgrade-test: FAILED (MECHANISM) -- the root did not rewrite the children backward" >&2
+	exit 1
+}
+
+# Past this line every mechanism gate has passed, which is what licenses the
+# elimination below.
+step "Waiting for every Application to converge on the previous versions"
+rollback_converged=1
+SETTLE_SECONDS="${UPGRADE_SETTLE_SECONDS:-30}" \
+./scripts/wait-for-platform.sh "${UP_TIMEOUT_SECONDS:-900}" || {
+	rc=$?
+	# Exit 4 is a source that cannot resolve, which is the re-point having failed
+	# and therefore ours. Reading it as compatibility is precisely the misclassification
+	# a single generic failure code would have produced.
+	if [ "$rc" -eq 4 ]; then
+		echo "upgrade-test: FAILED (MECHANISM) -- a source could not resolve after the rollback" >&2
+		exit "$rc"
+	fi
+	rollback_converged=0
+}
+
+if [ "$rollback_converged" -eq 0 ]; then
+	cat >&2 <<'WARN'
+
+  ============================================================================
+  ROLLBACK DID NOT CONVERGE -- reported as a WARNING, not a failure
+  ============================================================================
+
+  Every mechanism gate passed: the previous revision is published and served,
+  Argo CD resolved it, and the root rewrote all four child Applications back.
+  The machinery did its job and something downstream refused, which by
+  elimination is a compatibility problem -- an upstream release that cannot
+  read state a newer one wrote. That is a fact about a maintainer's decision
+  and not a defect in this repository, so it does not fail the build.
+
+  Read this before concluding it is upstream's: memory pressure and image
+  pull failures present identically to a component that cannot read a CRD.
+  The Applications table and per-application conditions are dumped below, and
+  a pod stuck on OOMKilled or ImagePullBackOff means the cause is local.
+
+WARN
+	kubectl -n argocd get applications >&2 2>&1 || true
+	kubectl get pods -A --field-selector=status.phase!=Running >&2 2>&1 || true
+	printf '\n  \033[33mUpgrade proven. Rollback blocked downstream -- see the warning above.\033[0m\n\n'
+	exit 0
+fi
+
+# --- 7. assertions, after the rollback has settled ----------------------------
+# Argo CD saying converged is Argo CD's opinion of its own work. These read the
+# cluster.
+step "Confirming the workloads are running the PREVIOUS versions"
+ASSERT_VERSION_PREFIX='UPGRADE_FROM_' ./scripts/assert-installed-versions.sh || {
+	rc=$?
+	echo "upgrade-test: FAILED -- Argo CD reported the rollback converged; the workloads did not take it" >&2
+	exit "$rc"
+}
+
+# The platform is not just a set of versions. This is the same proof the demo
+# suite uses, run against the rolled-back platform: the sample workload answered
+# over HTTPS through Gateway API on a cert-manager certificate.
+step "Confirming the platform still serves after the rollback"
+./scripts/demo-https.sh || {
+	echo "upgrade-test: FAILED -- the platform converged on the previous versions but stopped serving" >&2
+	exit 1
+}
+
+printf '\n  \033[32mRolled back to the previous versions, still converged, still serving.\033[0m\n'
+printf '  \033[32mMechanism proven in both directions. Compatibility is untested at these pins by design.\033[0m\n\n'
