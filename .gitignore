@@ -3,3 +3,6 @@
 
 # Local kubeconfig exports
 /kubeconfig
+
+# Written by CI and by the failure capture. Never a source of truth.
+/.ci-artifacts/
