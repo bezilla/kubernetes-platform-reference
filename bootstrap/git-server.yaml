@@ -80,6 +80,32 @@ data:
     alias.url += ( "/git" => "/usr/libexec/git-core/git-http-backend" )
     cgi.assign = ( "" => "" )
 
+    # Where lighttpd puts a chunk it cannot hold in memory. The name says
+    # "upload", which is misleading: this is the temp directory for any request
+    # body that outgrows the in-memory buffer, not a file-upload feature. It
+    # defaults to /var/tmp, and /var/tmp here is on the read-only root
+    # filesystem -- the container writes only to the emptyDirs mounted at /tmp,
+    # /srv/git and /srv/www.
+    #
+    # Unset, a spill fails with
+    #
+    #   (chunk.c.928) opening temp-file failed:
+    #       /var/tmp/lighttpd-upload-XXXXXX: Read-only file system
+    #
+    # and lighttpd abandons the response mid-stream. The client sees a truncated
+    # transfer -- "curl 18 transfer closed with outstanding read data remaining",
+    # "fatal: early EOF", "fatal: fetch-pack: invalid index-pack output" -- and
+    # Argo CD caches that manifest-generation failure, so the Application sits
+    # Unknown for minutes before a later reconcile succeeds. That is the
+    # argocd-repositories stall: four to six minutes, roughly one bring-up in
+    # three, and invisible in the access log because %b records what lighttpd
+    # handed to the socket rather than what arrived.
+    #
+    # Removing this line reintroduces all of it. Verified both directions on a
+    # live cluster: an 8MB request body fails with the error above and succeeds
+    # with it set.
+    server.upload-dirs = ( "/tmp" )
+
     setenv.add-environment = (
       "GIT_PROJECT_ROOT"    => "/srv/git",
       # Serve every repository under the project root without needing a
