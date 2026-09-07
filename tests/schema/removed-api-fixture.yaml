@@ -1,0 +1,28 @@
+# A manifest that names an API removed inside the covered range, used to prove
+# scripts/schema-check.sh actually fires.
+#
+# resource.k8s.io/v1alpha3 is part of Dynamic Resource Allocation. It exists in
+# Kubernetes 1.32 and 1.33 and is GONE in 1.34, which makes it the one thing a
+# three-leg matrix catches that a single leg does not -- and therefore the right
+# shape to test the check with. Measured against the schema source:
+#
+#   v1.32.11-standalone-strict/resourceclaim-resource-v1alpha3.json  HTTP 200
+#   v1.33.12-standalone-strict/resourceclaim-resource-v1alpha3.json  HTTP 200
+#   v1.34.0-standalone-strict/resourceclaim-resource-v1alpha3.json   HTTP 404
+#
+# spec.devices is set because the schema requires spec: an object that fails for
+# being malformed would prove the check can report SOMETHING, not that it can
+# tell one version from another. This one is VALID on 1.32 and 1.33, so the only
+# thing that changes across the legs is whether the API still exists.
+#
+# NOT in the corpus. schema-check.sh collects bootstrap/, platform/ and
+# tests/guardrails/ -- deliberately not tests/schema/ -- so this file is inert
+# until a proof run copies it in. Adding tests/schema/ to that glob would make
+# every run fail on the 1.34 leg forever.
+apiVersion: resource.k8s.io/v1alpha3
+kind: ResourceClaim
+metadata:
+  name: removed-api-fixture
+  namespace: default
+spec:
+  devices: {}

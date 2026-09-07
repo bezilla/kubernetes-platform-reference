@@ -478,6 +478,106 @@ jobs:
           include-hidden-files: true
           retention-days: 30
 
+  schema-check:
+    # Every rendered manifest, validated against each Kubernetes version the
+    # matrix brings up. No cluster, about a minute.
+    #
+    # This is the one thing the three bring-up legs catch that a single leg would
+    # not: an API removed in a version we still cover. Catching it here does not
+    # make the matrix redundant -- the legs still prove bring-up BEHAVIOUR -- but
+    # it does mean the API-compatibility argument for three legs no longer stands
+    # on its own. That decision is recorded in the roadmap, not made here.
+    #
+    # Exit codes are read differently from pin-delta's, and the difference is the
+    # point. pin-delta passes on 1 because an upstream maintainer changing a
+    # schema is a fact, not a fault. Here 1 means an object we install names an
+    # API a covered version does not have, which fails at apply time on that
+    # version. So only 0 passes: 1 is a defect, 2 means the check could not run
+    # and therefore proved nothing.
+    #
+    # Not a required status check, same reasoning pin-delta gets: it depends on
+    # four registries and on raw.githubusercontent.com, and a required check that
+    # goes red when someone else's CDN is down is a check people learn to click
+    # past.
+    name: schema check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.19.0
+      - name: install kubeconform and yq
+        run: |
+          # shellcheck disable=SC1091
+          source versions.env
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${CI_KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${CI_YQ_VERSION}/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: schema check
+        run: |
+          # mkdir FIRST, before anything redirects into it -- the same trap the
+          # bring-up and pin-delta jobs both document.
+          mkdir -p .ci-artifacts/schema-check
+          export SCHEMA_CHECK_WORKDIR="${RUNNER_TEMP}/schema-check"
+          set +e
+          ./scripts/schema-check.sh > .ci-artifacts/schema-check/report.txt 2>&1
+          rc=$?
+          set -e
+          # The per-version kubeconform output behind the report. The report says
+          # WHICH api disappeared on which leg; these say what every object on
+          # every leg resolved to, which is what following that up needs.
+          cp "${SCHEMA_CHECK_WORKDIR}"/rows-*.tsv .ci-artifacts/schema-check/ \
+            || echo "schema check: no per-version rows (exited ${rc} before validating)"
+          cp "${SCHEMA_CHECK_WORKDIR}/summary.tsv" .ci-artifacts/schema-check/ \
+            || echo "schema check: no summary table (exited ${rc} before classifying)"
+          echo "$rc" > .ci-artifacts/schema-check/exit-code.txt
+          ls -l .ci-artifacts/schema-check/
+          case "$rc" in
+            0) echo "schema check: no removed API, no schema violation" ;;
+            1) echo "schema check: FINDINGS -- read .ci-artifacts/schema-check/report.txt"; exit 1 ;;
+            *) echo "schema check: COULD NOT RUN (exit $rc) -- nothing was proved"; exit "$rc" ;;
+          esac
+
+      - name: confirm the report was written before uploading it
+        if: always()
+        run: |
+          test -s .ci-artifacts/schema-check/report.txt \
+            || { echo "schema check: no report was written -- there is nothing to upload"; exit 1; }
+          printf 'report.txt  %s lines  %s bytes\n' \
+            "$(wc -l < .ci-artifacts/schema-check/report.txt | tr -d ' ')" \
+            "$(wc -c < .ci-artifacts/schema-check/report.txt | tr -d ' ')"
+          printf 'rows        %s lines across %s file(s)\n' \
+            "$(cat .ci-artifacts/schema-check/rows-*.tsv 2>/dev/null | wc -l | tr -d ' ')" \
+            "$(find .ci-artifacts/schema-check -name 'rows-*.tsv' | wc -l | tr -d ' ')"
+
+      - name: summary
+        if: always()
+        run: |
+          { echo '### schema check'
+            echo '```'
+            cat .ci-artifacts/schema-check/report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: schema-check
+          path: .ci-artifacts/schema-check/
+          # .ci-artifacts is a hidden path and upload-artifact@v4 defaults
+          # include-hidden-files to false; without this the glob skips the
+          # dot-directory and reports "No files were found" on a green job.
+          include-hidden-files: true
+          retention-days: 30
+
   supply-chain:
     name: supply chain
     runs-on: ubuntu-latest

@@ -104,12 +104,27 @@ check-versions: ## Prove versions.env agrees with every Application manifest
 check-environments: ## Render every environment for every tenant, and check it
 	@./scripts/check-environments.sh
 
-# Not part of `make check`. It is the only target here that reaches the network
-# for something other than an image, and it reports rather than passes or fails
-# -- exit 1 means there is something to read, not that anything is broken.
+# Not part of `make check`. It pulls charts, and it reports rather than passes
+# or fails -- exit 1 means there is something to read, not that anything is
+# broken.
+#
+# This used to say it was the only target that reaches the network for something
+# other than an image. That was wrong: kubeconform embeds no schemas and
+# downloads every one of them from raw.githubusercontent.com, so `make lint` --
+# and therefore `make check` -- has always had a network dependency too. A
+# download failure there is an Error rather than a Skip even with
+# -ignore-missing-schemas, so lint does fail closed; it just was not the only one.
 .PHONY: pin-delta
 pin-delta: ## What a pin bump changed: storage/served versions, resources, CRD fields, tightened constraints
 	@./scripts/pin-delta.sh
+
+# Also not part of `make check`, for the reason pin-delta is not: it fetches a
+# full schema set per Kubernetes version, which is three times what lint fetches
+# for one, and `check` is the fast gate. Same three-code contract as pin-delta,
+# except that here exit 1 IS a defect -- a removed API fails at apply time.
+.PHONY: schema-check
+schema-check: ## Validate every rendered manifest against each Kubernetes version in the matrix
+	@./scripts/schema-check.sh
 
 .PHONY: check
 check: lint check-versions check-environments policy-test identity ## Everything CI runs that does not need a cluster
