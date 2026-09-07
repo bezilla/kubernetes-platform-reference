@@ -344,6 +344,104 @@ jobs:
           echo "ceiling: ${ceiling}s (2 x UP_TIMEOUT ${UP_TIMEOUT_SECONDS} + 2 x 300 gate + 600 slack)"
           timeout --signal=INT "$ceiling" make upgrade-test
 
+  pin-delta:
+    # What a pin bump changed, read from two chart tarballs. It reports; it does
+    # not gate.
+    #
+    # Deliberately NOT one of the required status checks. It reaches four
+    # external registries, and making a required check depend on Docker Hub being
+    # up would turn it red for reasons that have nothing to do with this
+    # repository -- which is how a check becomes something people click past.
+    #
+    # The script's three exit codes carry a distinction worth keeping, so this
+    # step keeps it. 0 (no delta) and 1 (findings) both pass: an upstream
+    # maintainer tightening a regex is a fact about their release, not a fault
+    # here. Only 2 fails, because "the chart would not pull" means the report
+    # proved nothing, and a report that proved nothing must not read as a clean
+    # bill of health.
+    name: pin delta
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.19.0
+      - name: install yq
+        run: |
+          # shellcheck disable=SC1091
+          source versions.env
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${CI_YQ_VERSION}/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: pin delta
+        run: |
+          # mkdir FIRST, before anything writes into it. The bring-up job learned
+          # this one the expensive way: a redirect into a directory that does not
+          # exist yet kills the step before the upload it was meant to feed ever
+          # runs, and the artifact is then missing for a reason the log does not
+          # obviously explain.
+          mkdir -p .ci-artifacts/pin-delta
+          export PIN_DELTA_WORKDIR="${RUNNER_TEMP}/pin-delta"
+          set +e
+          ./scripts/pin-delta.sh > .ci-artifacts/pin-delta/report.txt 2>&1
+          rc=$?
+          set -e
+          # The model tables behind the report. The report names a finding in one
+          # line; these are every field path and every constraint the comparison
+          # actually read, both sides, per component -- which is what following a
+          # finding up needs. The rendered charts and pulled tarballs stay in
+          # RUNNER_TEMP: they are large, and regenerating them is one command.
+          for kind in fields constraints resources vermap; do
+            cp "${PIN_DELTA_WORKDIR}"/*."${kind}" .ci-artifacts/pin-delta/ \
+              || echo "pin delta: no ${kind} tables (the script exited ${rc} before modelling)"
+          done
+          echo "$rc" > .ci-artifacts/pin-delta/exit-code.txt
+          ls -l .ci-artifacts/pin-delta/
+          case "$rc" in
+            0) echo "pin delta: no delta" ;;
+            1) echo "pin delta: findings -- read .ci-artifacts/pin-delta/report.txt" ;;
+            *) echo "pin delta: could not run (exit $rc)"; exit "$rc" ;;
+          esac
+
+      - name: confirm the report was written before uploading it
+        if: always()
+        run: |
+          test -s .ci-artifacts/pin-delta/report.txt \
+            || { echo "pin delta: no report was written -- there is nothing to upload"; exit 1; }
+          printf 'report.txt  %s lines  %s bytes\n' \
+            "$(wc -l < .ci-artifacts/pin-delta/report.txt | tr -d ' ')" \
+            "$(wc -c < .ci-artifacts/pin-delta/report.txt | tr -d ' ')"
+          printf 'tables      %s lines across %s files\n' \
+            "$(cat .ci-artifacts/pin-delta/*.fields .ci-artifacts/pin-delta/*.constraints \
+                   .ci-artifacts/pin-delta/*.resources .ci-artifacts/pin-delta/*.vermap | wc -l | tr -d ' ')" \
+            "$(find .ci-artifacts/pin-delta -type f | wc -l | tr -d ' ')"
+
+      - name: summary
+        if: always()
+        run: |
+          { echo '### pin delta'
+            echo '```'
+            cat .ci-artifacts/pin-delta/report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: pin-delta
+          path: .ci-artifacts/pin-delta/
+          # Same flag, same reason as the bring-up job: .ci-artifacts is a hidden
+          # path and upload-artifact@v4 defaults include-hidden-files to false,
+          # so its glob skips the dot-directory outright and reports "No files
+          # were found with the provided path" on an otherwise green job.
+          include-hidden-files: true
+          retention-days: 30
+
   supply-chain:
     name: supply chain
     runs-on: ubuntu-latest
