@@ -286,6 +286,12 @@ jobs:
     # version, and three of these would cost half an hour to learn the same thing.
     name: upgrade in place
     runs-on: ubuntu-latest
+    # The rollback phase reads pin-delta's storage verdict before it re-points,
+    # so this job now waits on that one; they ran in parallel before. pin-delta
+    # takes about twenty-five seconds against this job's ten minutes, so the
+    # serialisation costs about that -- and only moves the total run when this
+    # job is the longest, which it has not always been.
+    needs: pin-delta
     permissions:
       contents: read
     # The run step derives a 4860s (81m) ceiling from versions.env. This has to
@@ -318,6 +324,12 @@ jobs:
           cluster_name: upgrade-test-bootstrap
       - name: remove the bootstrap cluster, so make up builds its own
         run: kind delete cluster --name upgrade-test-bootstrap
+
+      - name: fetch the storage verdict from the pin-delta job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pin-delta
+          path: .pin-delta-artifact
 
       - name: git identity for the scratch commit
         # commit-tree needs an author. The ref is deleted on exit and never
@@ -354,6 +366,12 @@ jobs:
           phase=$(( 180 + 300 + UP_TIMEOUT_SECONDS + 300 ))
           ceiling=$(( UP_TIMEOUT_SECONDS + phase + phase + 600 ))
           echo "ceiling: ${ceiling}s (make up ${UP_TIMEOUT_SECONDS} + 2 x ${phase} upgrade/rollback + 600 slack)"
+          # Where the leg looks for the verdict. If the download produced
+          # nothing the file is absent, storage-verdict.sh reports
+          # `unavailable`, and the leg rolls back anyway but refuses to classify
+          # a failure. That is the designed behaviour, not a fallback that hides
+          # a problem.
+          export STORAGE_VERDICT_FILE=.pin-delta-artifact/storage-verdict.txt
           timeout --signal=INT "$ceiling" make upgrade-test
 
   pin-delta:
@@ -412,6 +430,12 @@ jobs:
             cp "${PIN_DELTA_WORKDIR}"/*."${kind}" .ci-artifacts/pin-delta/ \
               || echo "pin delta: no ${kind} tables (the script exited ${rc} before modelling)"
           done
+          # The verdict the rollback leg reads. Copied explicitly rather than by
+          # the loop above, because unlike the tables it is not optional: if it
+          # is missing the leg reports UNCLASSIFIED, and a silent miss here
+          # would look like a registry problem rather than a bug.
+          cp "${PIN_DELTA_WORKDIR}/storage-verdict.txt" .ci-artifacts/pin-delta/ \
+            || echo "pin delta: NO STORAGE VERDICT WRITTEN (script exited ${rc} before the report)"
           echo "$rc" > .ci-artifacts/pin-delta/exit-code.txt
           ls -l .ci-artifacts/pin-delta/
           case "$rc" in
