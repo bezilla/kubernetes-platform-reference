@@ -257,6 +257,13 @@ jobs:
         with:
           name: bring-up-k8s-${{ matrix.k8s.version }}
           path: .ci-artifacts/
+          # .ci-artifacts is a hidden path, and upload-artifact@v4 defaults
+          # include-hidden-files to false -- its glob skips dot-directories
+          # outright. The files were always written and always there; the action
+          # declined to look, and said "No files were found with the provided
+          # path" on a green job. The sbom upload in the supply chain job uses
+          # this same action and needs no flag, because sbom/ is not hidden.
+          include-hidden-files: true
           retention-days: 30
 
       - name: diagnostics if it did not converge
