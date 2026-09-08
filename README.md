@@ -446,7 +446,7 @@ bring-up fails; skip it otherwise.
 | `docker` on your PATH | the `docker-desktop` cask needs an **interactive** sudo to symlink into `/usr/local/bin`; installed non-interactively it rolls that step back and leaves `docker` off PATH entirely. Run the install from a terminal that can prompt, then check `command -v docker` before going further |
 | kubectl, [helm](https://helm.sh), git | |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | only for `make init`; the pre-push gate fails closed without it |
-| [kubeconform](https://github.com/yannh/kubeconform) | only for `make lint`, which skips manifest validation with a count when it is absent rather than failing |
+| [kubeconform](https://github.com/yannh/kubeconform) | `make lint` and `make check-environments`, which skip manifest validation with a count when it is absent rather than failing, and `make schema-check`, which refuses to run without it |
 | [kyverno CLI](https://github.com/kyverno/kyverno) | only for `make policy-test`, which fails closed without it — a policy suite that quietly does not run is how a policy matching everything reaches production |
 
 > **Turn off Docker's containerd image store.** Docker Desktop enables it by

@@ -94,16 +94,23 @@ data:
     #
     # and lighttpd abandons the response mid-stream. The client sees a truncated
     # transfer -- "curl 18 transfer closed with outstanding read data remaining",
-    # "fatal: early EOF", "fatal: fetch-pack: invalid index-pack output" -- and
-    # Argo CD caches that manifest-generation failure, so the Application sits
-    # Unknown for minutes before a later reconcile succeeds. That is the
-    # argocd-repositories stall: four to six minutes, roughly one bring-up in
-    # three, and invisible in the access log because %b records what lighttpd
-    # handed to the socket rather than what arrived.
+    # "fatal: early EOF", "fatal: fetch-pack: invalid index-pack output" -- which
+    # Argo CD caches as a manifest-generation failure, so the Application sits
+    # Unknown until a later reconcile succeeds.
     #
-    # Removing this line reintroduces all of it. Verified both directions on a
-    # live cluster: an 8MB request body fails with the error above and succeeds
-    # with it set.
+    # Removing this line reintroduces that. Verified both directions on a live
+    # cluster: an 8MB request body fails with the error above and succeeds with
+    # it set.
+    #
+    # THIS IS NOT THE argocd-repositories STALL, and this comment used to say it
+    # was. The threshold was measured afterwards: lighttpd spills a request body
+    # once it outgrows a 64 KiB in-memory buffer -- no spill at 64KB, spill at
+    # 65KB -- and it governs REQUEST BODIES only, with a 371,880-byte response
+    # against a 130-byte body not spilling. The git-upload-pack request bodies
+    # in the failing CI runs were 162 and 303 bytes, two to three orders of
+    # magnitude below the threshold, so they cannot have spilled. This fix
+    # closes a real failure mode that a large enough fetch negotiation would
+    # hit. It does not explain the stall, which is open -- see ROADMAP.md.
     server.upload-dirs = ( "/tmp" )
 
     setenv.add-environment = (
