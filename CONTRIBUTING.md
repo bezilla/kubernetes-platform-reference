@@ -143,9 +143,9 @@ range and by the `identity` job over all history:
   | `Verified` | free text |
   | `Measured` | free text |
 
-  This replaced a name-based denylist over commit messages. Refusal is on the
-  key, so an unlisted key is refused whether or not the gate has heard of it —
-  which a list of names cannot do for a key nobody has written yet.
+  Refusal is on the key, so an unlisted key is refused whether or not the gate
+  has heard of it — which a list of names cannot do for a key nobody has written
+  yet.
 
   `make test-hook` proves both directions: that the gate rejects each thing it
   claims to, and that it accepts each thing it claims to.
