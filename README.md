@@ -408,6 +408,26 @@ repository cannot back.
 | **A service mesh** | Two services do not need it, it roughly doubles per-pod memory, and the one thing it would show here — traffic splitting — Gateway API already expresses. |
 | **Flux alongside Argo** | Not because it is worse. Because two level-triggered reconcilers over overlapping manifests is a write loop, and disjoint ownership needs a boundary a single-cluster platform cannot justify. |
 
+| **Blue/green cluster cutover** | Needs two clusters and a traffic-shifting layer above them. See below — this is a scope statement, not an oversight. |
+
+### In-place upgrades, not blue/green
+
+This platform tests **in-place component upgrades**: the charts move underneath
+a running cluster and everything is expected to converge without intervention.
+That is a real thing to test and it is what one `kind` cluster can honestly
+demonstrate.
+
+It is not the pattern I have run in production. That one is blue/green with
+traffic drained at the edge — Route 53 shifting off the cluster, drain, upgrade,
+shift back. In that model, upgrading under load is not the problem: the drain
+and the cutover are. Proving it needs two clusters and a traffic-shifting layer
+in front of them, which is past what `kind` provides, so it is named here rather
+than approximated.
+
+So: this repository demonstrates that an in-place upgrade converges and that a
+rollback re-point works. It does not demonstrate a zero-downtime cutover, and
+nothing here should be read as a claim that it does.
+
 [ROADMAP.md](ROADMAP.md) has what *is* next, in order, with the reasoning.
 
 ---
