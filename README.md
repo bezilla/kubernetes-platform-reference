@@ -80,13 +80,14 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | Telemetry proof | **65 spans**, from a workload configured for none |
 | Deployment deleted out of band | **restored in 5s**, no sync run |
 | Kubernetes versions the CI matrix targets | **1.32, 1.33, 1.34** — see the note below |
-| In-place upgrade from the previous chart versions | converged, once, locally |
+| In-place upgrade from the previous chart versions | **converged, then rolled back** in CI |
 | Environments rendered and guardrail-checked | **3 × 2 tenants, 21 assertions** |
 
 > **What has actually run, and where.** The captures above are real output from
 > an 8-core machine. The bring-up has run and passed on all three matrix targets
-> — Kubernetes 1.32, 1.33 and 1.34 — on run `34167675924`. Numbers without a
-> qualifier are from repeated local runs; the upgrade figure is a single one.
+> — Kubernetes 1.32, 1.33 and 1.34 — on run `34167675924`, and the in-place
+> upgrade and its rollback re-point ran and passed on that same run. Numbers
+> without a qualifier are from repeated local runs.
 >
 > **The cluster jobs run on GitHub's standard `ubuntu-latest` runner, and the
 > margin is zero.** Read from that run's log, identically on all three legs:
