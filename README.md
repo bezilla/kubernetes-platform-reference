@@ -81,7 +81,7 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | Deployment deleted out of band | **restored in 5s**, no sync run |
 | Kubernetes versions the CI matrix targets | **1.32, 1.33, 1.34** — see the note below |
 | In-place upgrade from the previous chart versions | **converged, then rolled back** in CI |
-| Environments rendered and guardrail-checked | **3 × 2 tenants, 21 assertions** |
+| Environments rendered and guardrail-checked | **3 × 2 tenants, 19 assertions** |
 
 > **What has actually run, and where.** The captures above are real output from
 > an 8-core machine. The bring-up has run and passed on all three matrix targets
