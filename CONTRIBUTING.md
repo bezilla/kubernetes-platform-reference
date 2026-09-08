@@ -56,14 +56,55 @@ a run.
 
 ### What CI runs
 
-| job | what it enforces |
-|-----|------------------|
-| `chart · manifests` | helm lint, render, values schema, kubeconform, every environment, `versions.env` against every Application, and `make shell-check` |
-| `guardrails` | the Kyverno suite, both directions |
-| `identity` | identity, trailers and secrets over all history at `fetch-depth: 0`, plus the gate's own self-test |
-| `bring-up · demo` | the whole platform built and all five demos run, on a clean runner, on the fallback path |
-| `upgrade in place` | the previous chart versions installed, then upgraded to the pinned ones |
-| `supply chain` | trivy over the tree and both built images, an SPDX SBOM per image |
+Eight job definitions produce **ten check runs**: the bring-up job is a matrix
+and fans out to three legs, one per Kubernetes version. Everything starts in
+parallel off the same trigger — `push` to `main` and `pull_request` — with one
+exception: `upgrade in place` declares `needs: pin-delta`, because it consumes
+the storage-move verdict that job publishes as an artifact.
+
+**Four of the ten gate a merge. The other six report and never block.** That
+distinction lives in the branch protection settings rather than in
+`ci.yml`, so it is invisible when reading the workflow:
+
+```mermaid
+flowchart TD
+    T["push to main &middot; pull_request"]
+    T --> L["chart &middot; manifests"]
+    T --> G["guardrails"]
+    T --> I["identity"]
+    T --> S["supply chain"]
+    T --> C["fallback path &middot; bring-up &middot; demo<br/>3 legs: k8s 1.32, 1.33, 1.34"]
+    T --> P["pin delta"]
+    T --> K["schema check"]
+    P -- "storage-verdict.txt artifact" --> U["upgrade in place"]
+
+    classDef required fill:#0b6b2f,stroke:#043d1a,color:#ffffff
+    classDef advisory fill:#4a4a4a,stroke:#242424,color:#ffffff,stroke-dasharray:5 4
+    class L,G,I,S required
+    class C,P,K,U advisory
+```
+
+Solid green is required, dashed grey is advisory. If the diagram does not
+render for you, the required set is exactly `chart · manifests`, `guardrails`,
+`identity` and `supply chain`; the advisory set is the three bring-up legs,
+`upgrade in place`, `pin delta` and `schema check`.
+
+| job | required? | what it enforces |
+|-----|-----------|------------------|
+| `chart · manifests` | **required** | helm lint, render, values schema, kubeconform, every environment, `versions.env` against every Application, and `make shell-check` |
+| `guardrails` | **required** | the Kyverno suite, both directions |
+| `identity` | **required** | identity, trailers and secrets over all history at `fetch-depth: 0`, plus the gate's own self-test |
+| `supply chain` | **required** | trivy over the tree and both built images, an SPDX SBOM per image |
+| `fallback path · bring-up · demo · k8s <ver>` | advisory, 3 legs | the whole platform built and all six demos run, on a clean runner, on the fallback path |
+| `upgrade in place` | advisory | the previous chart versions installed, upgraded to the pinned ones, then rolled back |
+| `pin delta` | advisory | what a pin bump changed, from two chart tarballs, with no cluster |
+| `schema check` | advisory | every rendered manifest against each Kubernetes version in the matrix, with no cluster |
+
+Why the expensive jobs are advisory: they depend on external registries and on
+a schema host, and a required check that goes red because somebody else's CDN
+had a bad minute is a check people learn to click past. `pin delta` and
+`schema check` also report rather than gate by design — `pin delta` exits 1 to
+mean "there is something to read", not "something is broken".
 
 ## Dependencies are pinned
 
