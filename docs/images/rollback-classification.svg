@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 730" width="1240" height="730" role="img" aria-labelledby="t d">
+<title id="t">How a rollback failure is classified, and when it refuses to classify at all</title>
+<desc id="d">The storage-move verdict comes from the pin delta job's artifact. If it says the storage version moved, the live leg is skipped with a warning that this pin is a one-way door, and the run stays green. If it says none, or is unavailable, the rollback re-points and runs. A failing mechanism gate is red, because the defect is ours. If every mechanism gate passes and the Applications still do not converge, the outcome depends on what the run knows: a source that cannot resolve is red, a failure with a verdict of none is green with a loud compatibility warning because that is an upstream decision, and a failure with no verdict is reported as UNCLASSIFIED with exit zero rather than guessing a side. If it converges, the post-rollback gates decide, and passing them is green.</desc>
+<style>text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}</style>
+<rect width="1240" height="730" fill="#0d1117"/>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/></marker></defs>
+
+<text x="56" y="52" fill="#f0f6fc" font-size="26" font-weight="700">What a rollback failure is allowed to mean</text>
+<text x="56" y="80" fill="#8b949e" font-size="14">Classification by elimination, so what the run may conclude depends on what it knows. Decisions on the left, outcomes on the right.</text>
+
+<rect x="56" y="112" width="470" height="64" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+<rect x="56" y="112" width="5" height="64" rx="2.5" fill="#58a6ff"/>
+<text x="84" y="138" fill="#58a6ff" font-size="11" font-weight="700">DECISION</text>
+<text x="84" y="160" fill="#f0f6fc" font-size="14" font-weight="700">storage-move verdict, from the pin delta artifact</text>
+
+<path d="M291 176 L291 208" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="303" y="198" fill="#8b949e" font-size="11">none  /  unavailable</text>
+<path d="M526 144 L646 144" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="556" y="136" fill="#8b949e" font-size="11">moved</text>
+
+<rect x="56" y="212" width="470" height="52" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="212" width="5" height="52" rx="2.5" fill="#8b949e"/>
+<text x="84" y="243" fill="#c9d1d9" font-size="14">re-point: republish the previous revision</text>
+
+<path d="M291 264 L291 296" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+
+<rect x="56" y="300" width="470" height="64" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+<rect x="56" y="300" width="5" height="64" rx="2.5" fill="#58a6ff"/>
+<text x="84" y="326" fill="#58a6ff" font-size="11" font-weight="700">MECHANISM GATES</text>
+<text x="84" y="348" fill="#f0f6fc" font-size="14" font-weight="700">publish landed  ·  children rewritten backward</text>
+
+<path d="M526 332 L646 332" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="562" y="324" fill="#8b949e" font-size="11">fail</text>
+<path d="M291 364 L291 396" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="303" y="386" fill="#8b949e" font-size="11">pass</text>
+
+<rect x="56" y="400" width="470" height="52" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+<rect x="56" y="400" width="5" height="52" rx="2.5" fill="#58a6ff"/>
+<text x="84" y="431" fill="#f0f6fc" font-size="14" font-weight="700">do the Applications converge?</text>
+
+<path d="M526 426 L588 426 L588 396 L646 396" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<path d="M526 426 L588 426 L588 458 L646 458" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<path d="M526 426 L588 426 L588 522 L646 522" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+
+<path d="M291 452 L291 484" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="303" y="474" fill="#8b949e" font-size="11">yes</text>
+
+<rect x="56" y="488" width="470" height="64" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="488" width="5" height="64" rx="2.5" fill="#8b949e"/>
+<text x="84" y="512" fill="#c9d1d9" font-size="14">post-rollback gates</text>
+<text x="84" y="534" fill="#8b949e" font-size="12">previous images on running pods · edge proxy rolled · serves HTTPS</text>
+
+<path d="M526 520 L588 520 L588 600 L646 600" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="600" y="592" fill="#8b949e" font-size="11">pass</text>
+
+<rect x="650" y="112" width="534" height="64" rx="12" fill="#11161d" stroke="#3fb950" stroke-width="1"/>
+<rect x="650" y="112" width="5" height="64" rx="2.5" fill="#3fb950"/>
+<text x="678" y="136" fill="#3fb950" font-size="11" font-weight="700">GREEN  ·  live leg skipped</text>
+<text x="678" y="158" fill="#c9d1d9" font-size="13">This pin is a one-way door. Warned, not failed — it is upstream's call.</text>
+
+<rect x="650" y="300" width="534" height="64" rx="12" fill="#11161d" stroke="#f85149" stroke-width="1"/>
+<rect x="650" y="300" width="5" height="64" rx="2.5" fill="#f85149"/>
+<text x="678" y="324" fill="#f85149" font-size="11" font-weight="700">RED  ·  the defect is ours</text>
+<text x="678" y="346" fill="#c9d1d9" font-size="13">The re-point did not land, or the root never rewrote the children.</text>
+
+<rect x="650" y="372" width="534" height="48" rx="12" fill="#11161d" stroke="#f85149" stroke-width="1"/>
+<rect x="650" y="372" width="5" height="48" rx="2.5" fill="#f85149"/>
+<text x="678" y="392" fill="#f85149" font-size="11" font-weight="700">RED</text>
+<text x="678" y="411" fill="#c9d1d9" font-size="13">no: a source could not resolve — that is the re-point having failed</text>
+
+<rect x="650" y="430" width="534" height="56" rx="12" fill="#11161d" stroke="#3fb950" stroke-width="1"/>
+<rect x="650" y="430" width="5" height="56" rx="2.5" fill="#3fb950"/>
+<text x="678" y="450" fill="#3fb950" font-size="11" font-weight="700">GREEN  +  LOUD WARNING</text>
+<text x="678" y="470" fill="#c9d1d9" font-size="13">no, verdict was none — compatibility, an upstream decision</text>
+
+<rect x="650" y="494" width="534" height="56" rx="12" fill="#11161d" stroke="#d29922" stroke-width="1"/>
+<rect x="650" y="494" width="5" height="56" rx="2.5" fill="#d29922"/>
+<text x="678" y="514" fill="#d29922" font-size="11" font-weight="700">UNCLASSIFIED  ·  exit 0</text>
+<text x="678" y="534" fill="#c9d1d9" font-size="13">no, and no verdict was available — no side is guessed</text>
+
+<rect x="650" y="572" width="534" height="56" rx="12" fill="#11161d" stroke="#3fb950" stroke-width="1"/>
+<rect x="650" y="572" width="5" height="56" rx="2.5" fill="#3fb950"/>
+<text x="678" y="592" fill="#3fb950" font-size="11" font-weight="700">GREEN</text>
+<text x="678" y="612" fill="#c9d1d9" font-size="13">rolled back, converged, still serving. A failing gate here is RED.</text>
+
+<text x="56" y="676" fill="#8b949e" font-size="12">The asymmetry that is easy to get backwards: an unavailable verdict only changes the outcome when the rollback ALSO fails to converge.</text>
+<text x="56" y="698" fill="#8b949e" font-size="12">An unavailable verdict on a rollback that converges is an ordinary green.</text>
+</svg>

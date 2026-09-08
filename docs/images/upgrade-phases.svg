@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 830" width="1240" height="830" role="img" aria-labelledby="t d">
+<title id="t">The upgrade test's three phases, and what each gate reads</title>
+<desc id="d">Phase one installs the previous pinned chart versions from a scratch commit with make up. Phase two publishes the pinned revision and lets Argo CD converge, behind five gates: the publish landed, read from the mirror ref inside the git-server pod and Argo CD's resolved revision rather than local HEAD; the root rewrote the child Application specs; every Application reached Synced and Healthy and held for thirty seconds; targetRevision equals the pinned version, which reads desired state only; and the workloads carry the pinned images, read from running pods rather than the Deployment spec. Phase three rolls back by re-pointing Argo CD rather than by helm rollback, and its outcome is decided by the classification diagram.</desc>
+<style>text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}</style>
+<rect width="1240" height="830" fill="#0d1117"/>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/></marker></defs>
+
+<text x="56" y="52" fill="#f0f6fc" font-size="26" font-weight="700">The upgrade test, and what each gate reads</text>
+<text x="56" y="80" fill="#8b949e" font-size="14">Three phases against one cluster. Two gates are worded by what they read, because the obvious version of each passed on a real defect.</text>
+
+<rect x="56" y="112" width="1128" height="110" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="112" width="5" height="110" rx="2.5" fill="#bc8cff"/>
+<text x="84" y="140" fill="#bc8cff" font-size="11" font-weight="700">PHASE 1</text>
+<text x="84" y="170" fill="#f0f6fc" font-size="20" font-weight="700">Install the previous pins</text>
+<text x="84" y="194" fill="#c9d1d9" font-size="13">A scratch commit carrying the previous chart versions, then a full bring-up.</text>
+<rect x="700" y="152" width="118" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="759" y="168" fill="#8b949e" font-size="11" text-anchor="middle">scratch commit</text>
+<rect x="826" y="152" width="80" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="866" y="168" fill="#8b949e" font-size="11" text-anchor="middle">make up</text>
+<rect x="914" y="152" width="106" height="24" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="967" y="168" fill="#8b949e" font-size="11" text-anchor="middle">previous pins</text>
+
+<path d="M620 222 L620 258" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+
+<rect x="56" y="262" width="1128" height="334" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+<rect x="56" y="262" width="5" height="334" rx="2.5" fill="#58a6ff"/>
+<text x="84" y="290" fill="#58a6ff" font-size="11" font-weight="700">PHASE 2  ·  the upgrade, behind five gates</text>
+<text x="84" y="320" fill="#f0f6fc" font-size="20" font-weight="700">Publish the pinned revision, let Argo CD converge</text>
+<text x="84" y="344" fill="#c9d1d9" font-size="13">Each gate below names what it reads. Converging is not the same as upgrading.</text>
+
+<rect x="84" y="360" width="1072" height="34" rx="17" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="108" y="382" fill="#c9d1d9" font-size="13">1   the publish landed</text>
+<text x="1132" y="382" fill="#f0883e" font-size="12" text-anchor="end">reads the mirror ref inside the git-server pod — not local HEAD</text>
+
+<rect x="84" y="402" width="1072" height="34" rx="17" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="108" y="424" fill="#c9d1d9" font-size="13">2   the root rewrote the child Application specs</text>
+<text x="1132" y="424" fill="#8b949e" font-size="12" text-anchor="end">reads the four version-pinned children</text>
+
+<rect x="84" y="444" width="1072" height="34" rx="17" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="108" y="466" fill="#c9d1d9" font-size="13">3   every Application Synced + Healthy, held 30s</text>
+<text x="1132" y="466" fill="#8b949e" font-size="12" text-anchor="end">reads Argo CD's verdict on its own work</text>
+
+<rect x="84" y="486" width="1072" height="34" rx="17" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="108" y="508" fill="#c9d1d9" font-size="13">4   targetRevision == pinned</text>
+<text x="1132" y="508" fill="#8b949e" font-size="12" text-anchor="end">reads DESIRED state only</text>
+
+<rect x="84" y="528" width="1072" height="34" rx="17" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="108" y="550" fill="#c9d1d9" font-size="13">5   the workloads carry the pinned images</text>
+<text x="1132" y="550" fill="#f0883e" font-size="12" text-anchor="end">reads RUNNING PODS — not the Deployment spec</text>
+
+<text x="84" y="580" fill="#8b949e" font-size="12">Gates 1 and 5 are orange because each replaced a version that passed on a real defect. A spec that moved while no container did satisfies 1 through 4.</text>
+
+<path d="M620 596 L620 632" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+
+<rect x="56" y="636" width="1128" height="110" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="636" width="5" height="110" rx="2.5" fill="#f0883e"/>
+<text x="84" y="664" fill="#f0883e" font-size="11" font-weight="700">PHASE 3</text>
+<text x="84" y="694" fill="#f0f6fc" font-size="20" font-weight="700">Roll back — an Argo CD re-point, not helm rollback</text>
+<text x="84" y="718" fill="#c9d1d9" font-size="13">Republish the older revision as main and let Argo CD converge backward. What a failure here means is decided by the classification diagram.</text>
+
+<text x="56" y="790" fill="#8b949e" font-size="12">helm rollback was rejected rather than overlooked: every component is owned by an Application with selfHeal and prune, so it would be reverted within seconds.</text>
+</svg>

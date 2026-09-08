@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 640" width="1240" height="640" role="img" aria-labelledby="t d">
+<title id="t">What CI runs, and which four checks gate a merge</title>
+<desc id="d">Every job starts in parallel from a push to main or a pull request. Four checks are required and block the merge until they pass: chart and manifests, guardrails, identity, and supply chain. Six further check runs are advisory and never block: the bring-up and demo job across three Kubernetes legs 1.32, 1.33 and 1.34, plus schema check, pin delta, and upgrade in place. The one dependency in the workflow is pin delta publishing a storage-verdict.txt artifact that upgrade in place consumes. Which checks are required is configured in branch protection, not in ci.yml.</desc>
+<style>text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}</style>
+<rect width="1240" height="640" fill="#0d1117"/>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/></marker></defs>
+
+<text x="56" y="52" fill="#f0f6fc" font-size="26" font-weight="700">What CI runs, and what gates a merge</text>
+<text x="56" y="80" fill="#8b949e" font-size="14">Eight job definitions, ten check runs — the bring-up job is a matrix and fans out to three legs. Four of the ten block a merge.</text>
+
+<rect x="56" y="110" width="1128" height="64" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="56" y="110" width="5" height="64" rx="2.5" fill="#8b949e"/>
+<text x="84" y="136" fill="#8b949e" font-size="11" font-weight="700">TRIGGER</text>
+<text x="84" y="159" fill="#f0f6fc" font-size="15" font-weight="700">push to main  ·  pull_request</text>
+<text x="1160" y="152" fill="#8b949e" font-size="12" text-anchor="end">every job below starts at the same moment</text>
+
+<path d="M330 174 L330 210" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<path d="M910 174 L910 210" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+
+<rect x="56" y="214" width="548" height="348" rx="12" fill="#161b22" stroke="#3fb950" stroke-width="2"/>
+<rect x="56" y="214" width="5" height="348" rx="2.5" fill="#3fb950"/>
+<text x="84" y="244" fill="#3fb950" font-size="11" font-weight="700">REQUIRED  ·  GATES A MERGE</text>
+<text x="84" y="274" fill="#f0f6fc" font-size="20" font-weight="700">Four checks</text>
+<text x="84" y="298" fill="#c9d1d9" font-size="13">The push is refused until all four pass.</text>
+<rect x="84" y="316" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="304" y="336" fill="#c9d1d9" font-size="13" text-anchor="middle">chart · manifests</text>
+<rect x="84" y="354" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="304" y="374" fill="#c9d1d9" font-size="13" text-anchor="middle">guardrails</text>
+<rect x="84" y="392" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="304" y="412" fill="#c9d1d9" font-size="13" text-anchor="middle">identity</text>
+<rect x="84" y="430" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="304" y="450" fill="#c9d1d9" font-size="13" text-anchor="middle">supply chain</text>
+<text x="84" y="492" fill="#8b949e" font-size="12">All four need no cluster and finish in about a minute.</text>
+<text x="84" y="512" fill="#8b949e" font-size="12">They are the whole merge gate.</text>
+
+<rect x="636" y="214" width="548" height="348" rx="12" fill="#11161d" stroke="#30363d" stroke-width="1"/>
+<rect x="636" y="214" width="5" height="348" rx="2.5" fill="#8b949e"/>
+<text x="664" y="244" fill="#8b949e" font-size="11" font-weight="700">ADVISORY  ·  REPORTS, NEVER BLOCKS</text>
+<text x="664" y="274" fill="#f0f6fc" font-size="20" font-weight="700">Six check runs</text>
+<text x="664" y="298" fill="#c9d1d9" font-size="13">Red here has never stopped a merge.</text>
+<rect x="664" y="312" width="440" height="46" rx="16" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="884" y="331" fill="#c9d1d9" font-size="13" text-anchor="middle">fallback path · bring-up · demo</text>
+<text x="884" y="349" fill="#8b949e" font-size="11" text-anchor="middle">3 legs — k8s 1.32 · 1.33 · 1.34</text>
+<rect x="664" y="370" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="884" y="390" fill="#c9d1d9" font-size="13" text-anchor="middle">schema check</text>
+<rect x="664" y="412" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="884" y="432" fill="#c9d1d9" font-size="13" text-anchor="middle">pin delta</text>
+<path d="M884 442 L884 466" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+<text x="898" y="459" fill="#8b949e" font-size="11">storage-verdict.txt artifact</text>
+<rect x="664" y="470" width="440" height="30" rx="15" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="884" y="490" fill="#c9d1d9" font-size="13" text-anchor="middle">upgrade in place</text>
+<text x="664" y="532" fill="#8b949e" font-size="12">The only dependency in the workflow: everything else is parallel.</text>
+
+<text x="56" y="600" fill="#8b949e" font-size="12">Which checks are required lives in the branch protection settings, not in ci.yml — reading the workflow cannot tell you.</text>
+</svg>

@@ -66,28 +66,12 @@ the storage-move verdict that job publishes as an artifact.
 distinction lives in the branch protection settings rather than in
 `ci.yml`, so it is invisible when reading the workflow:
 
-```mermaid
-flowchart TD
-    T["push to main &middot; pull_request"]
-    T --> L["chart &middot; manifests"]
-    T --> G["guardrails"]
-    T --> I["identity"]
-    T --> S["supply chain"]
-    T --> C["fallback path &middot; bring-up &middot; demo<br/>3 legs: k8s 1.32, 1.33, 1.34"]
-    T --> P["pin delta"]
-    T --> K["schema check"]
-    P -- "storage-verdict.txt artifact" --> U["upgrade in place"]
+![What CI runs: a push to main or a pull request starts every job in parallel. Four required checks gate a merge — chart and manifests, guardrails, identity, supply chain. Six advisory check runs never block — three bring-up legs on Kubernetes 1.32, 1.33 and 1.34, schema check, pin delta, and upgrade in place, which consumes pin delta's storage-verdict artifact](docs/images/ci-jobs.svg)
 
-    classDef required fill:#0b6b2f,stroke:#043d1a,color:#ffffff
-    classDef advisory fill:#4a4a4a,stroke:#242424,color:#ffffff,stroke-dasharray:5 4
-    class L,G,I,S required
-    class C,P,K,U advisory
-```
-
-Solid green is required, dashed grey is advisory. If the diagram does not
-render for you, the required set is exactly `chart · manifests`, `guardrails`,
-`identity` and `supply chain`; the advisory set is the three bring-up legs,
-`upgrade in place`, `pin delta` and `schema check`.
+The required set is exactly `chart · manifests`, `guardrails`, `identity` and
+`supply chain`. The advisory set is the three bring-up legs, `upgrade in place`,
+`pin delta` and `schema check`. The one dependency in the workflow is `pin
+delta` publishing the storage verdict that `upgrade in place` reads.
 
 | job | required? | what it enforces |
 |-----|-----------|------------------|

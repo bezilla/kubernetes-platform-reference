@@ -563,17 +563,7 @@ Argo CD converge backward.
 
 ### The phases, and what each gate actually reads
 
-```mermaid
-flowchart TD
-    A["Phase 1 &mdash; install the PREVIOUS pins<br/>scratch commit, then make up"]
-    A --> B["Phase 2 &mdash; publish the PINNED revision"]
-    B --> C{{"gate: the publish landed<br/>reads the mirror ref inside the git-server pod<br/>and Argo CD's resolved revision, not local HEAD"}}
-    C --> D["wait: the root rewrites the child Application specs"]
-    D --> E["wait: every Application Synced + Healthy, held 30s"]
-    E --> F{{"gate: targetRevision == pinned<br/>reads DESIRED state only"}}
-    F --> G{{"gate: workloads carry the pinned images<br/>reads RUNNING PODS, not the Deployment spec"}}
-    G --> H["Phase 3 &mdash; roll back<br/>see the classification below"]
-```
+![The upgrade test's three phases: install the previous pins from a scratch commit, then publish the pinned revision behind five gates — the publish landed read from the mirror ref rather than local HEAD, the child specs rewritten, every Application Synced and Healthy held 30s, targetRevision matching the pins, and the workloads carrying the pinned images read from running pods rather than the Deployment spec — then roll back by re-pointing Argo CD](docs/images/upgrade-phases.svg)
 
 Two of those gates are worded the way they are because the obvious version was
 wrong, and a diagram of the obvious version would have looked identical.
@@ -598,24 +588,9 @@ rollout.
 Everything past the mechanism gates is an elimination argument, so what the run
 is allowed to conclude depends on what it knows:
 
-```mermaid
-flowchart TD
-    V{"storage-move verdict<br/>from the pin delta artifact"}
-    V -- "moved" --> SKIP["skip the live leg<br/>warn: this pin is a one-way door<br/>exit 0"]
-    V -- "none" --> RB["re-point: republish the previous revision"]
-    V -- "unavailable" --> RB
-    RB --> M{{"mechanism gates<br/>publish landed, root rewrote children backward"}}
-    M -- "fail" --> RED["RED &mdash; the defect is ours"]
-    M -- "pass" --> CONV{"do the Applications converge?"}
-    CONV -- "no: source unresolvable" --> RED
-    CONV -- "no, verdict was none" --> WARN["green + loud warning<br/>compatibility, upstream's decision"]
-    CONV -- "no, verdict unavailable" --> UNC["UNCLASSIFIED, exit 0<br/>no side is guessed"]
-    CONV -- "yes" --> POST{{"post-rollback gates: previous images on<br/>running pods, edge proxy rolled, serves HTTPS"}}
-    POST -- "fail" --> RED
-    POST -- "pass" --> OK["green"]
-```
+![How a rollback failure is classified: a storage verdict of moved skips the live leg and stays green; a failing mechanism gate is red because the defect is ours; a non-converging rollback is red if a source could not resolve, green with a loud compatibility warning if the verdict was none, and UNCLASSIFIED with exit 0 if no verdict was available; a converging rollback that passes the post-rollback gates is green](docs/images/rollback-classification.svg)
 
-In words, for anyone whose reader does not render Mermaid:
+The same thing in words, since the diagram is a summary and this is the rule:
 
 - **The rollback converges** — green.
 - **A mechanism gate fails** — red. The re-point did not land, the root did not
