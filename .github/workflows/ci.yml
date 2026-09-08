@@ -374,6 +374,37 @@ jobs:
           export STORAGE_VERDICT_FILE=.pin-delta-artifact/storage-verdict.txt
           timeout --signal=INT "$ceiling" make upgrade-test
 
+      # The bring-up job has uploaded .ci-artifacts since it learned to; this
+      # job never did, and it runs `make up` itself for phase 1. So a fetch
+      # capture firing here was written and then destroyed with the runner --
+      # the one job most likely to see the stall was the one that threw the
+      # evidence away.
+      - name: say whether a fetch failure was captured
+        if: always()
+        run: |
+          if [ -d .ci-artifacts/fetch-failure ]; then
+            echo "A FETCH FAILURE WAS CAPTURED on this run:"
+            cat .ci-artifacts/fetch-failure/MANIFEST.txt || true
+          else
+            echo "no fetch failure captured -- the condition did not appear on this run"
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: upgrade-in-place
+          path: .ci-artifacts/
+          # .ci-artifacts is hidden and upload-artifact@v4 skips dot-directories
+          # without this, which is how the bring-up job once reported "No files
+          # were found" on a green run that had written them all along.
+          include-hidden-files: true
+          # Most runs capture nothing, because the thing this collects is
+          # intermittent. Absence is the expected case and must not redden the
+          # job -- and the step above prints which case it was, so a missing
+          # artifact is never silently ambiguous.
+          if-no-files-found: ignore
+          retention-days: 30
+
   pin-delta:
     # What a pin bump changed, read from two chart tarballs. It reports; it does
     # not gate.
