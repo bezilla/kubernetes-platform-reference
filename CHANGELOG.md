@@ -54,10 +54,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **The identity gate allowlists trailers instead of matching them against a
   name list.** The old gate matched every commit message and every tree in the
-  push range against a bracketed list of names. It is
-  replaced by an allowlist on the trailer block — `Signed-off-by` carrying
-  exactly `Paul Bezilla <bezilla@protonmail.com>`, `Verified` and `Measured`
-  carrying free text, every other key refused — so a key that does not exist
+  push range against a list of names. It is replaced by an allowlist on the
+  trailer block — `Signed-off-by` carrying exactly
+  `Paul Bezilla <bezilla@protonmail.com>`, `Verified` and `Measured` carrying
+  free text, every other key refused — so a key that does not exist
   yet is refused for being unlisted rather than surviving for being unknown.
   Trailers are read with `git interpret-trailers --parse`, git's own definition,
   because a `^Key:` regex would reject ordinary prose in this repository.
