@@ -258,14 +258,24 @@ printf '\n  \033[32mUpgraded in place, from the previous versions to the pinned 
 #
 # At the current pins this is a MECHANISM test and nothing more. The static
 # analysis established there is nothing in these bumps that could fail a
-# rollback: no CRD storage-version moves, zero resource-set differences across
-# 168 rendered resources, and the two schema changes that do exist are in
-# `policies.kyverno.io` objects this repository does not author. So a green
-# proves the re-point works in reverse -- that the root rewrites nine children
-# backward and Argo CD converges without anyone intervening. It does NOT prove
-# rollback is safe in general, and it cannot, because at these pins there is no
-# compatibility hazard present to survive. Compatibility needs its own pass with
-# a pin set far enough back to contain one.
+# rollback: no CRD storage-version moves, no served-version removals, and zero
+# resource-set differences across 164 rendered resources.
+#
+# There ARE schema changes -- 187 added CRD fields across nine CRDs, plus one
+# tightened constraint. This comment used to wave them off as being in
+# `policies.kyverno.io` objects this repository does not author. That was
+# wrong: two of the nine are in group `kyverno.io`, and one of those is
+# clusterpolicies.kyverno.io, which this repository authors four times over.
+# They are harmless here for a measured reason instead: of the 36 distinct
+# flagged field paths, ZERO are set by anything in this repository -- checked
+# against all 439 distinct paths its manifests, tenant values and environment
+# files actually set.
+#
+# So a green proves the re-point works in reverse -- that the root rewrites
+# nine children backward and Argo CD converges without anyone intervening. It
+# does NOT prove rollback is safe in general, and it cannot, because at these
+# pins there is no compatibility hazard present to survive. Compatibility needs
+# its own pass with a pin set far enough back to contain one.
 #
 # THREE OUTCOMES:
 #   rollback converges            -> green

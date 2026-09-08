@@ -8,7 +8,7 @@
 # is deployed anywhere.
 #
 # It exists because that analysis was done by hand once: 39 CRD files compared
-# across four components and 168 rendered resources set-diffed. Doing it by hand
+# across four components and 164 rendered resources set-diffed. Doing it by hand
 # does not survive the next bump, and the interesting findings were not the ones
 # anybody predicted.
 #
