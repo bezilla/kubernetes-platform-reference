@@ -479,11 +479,8 @@ is treated as no evidence at all rather than as good news.
 ## Why the identity gate allowlists trailers
 
 The gate used to match every commit message, and every tree in the push range,
-against a list of names written in bracket expressions so the file would not
-contain the strings it matched on.
-
-By construction it could only ever catch what somebody had already thought to
-write down.
+against a fixed list of names. By construction it could only ever catch what
+somebody had already thought to write down.
 
 The replacement inverts the question. The rule applies to the **trailer block**,
 and it is applied by allowlist:
