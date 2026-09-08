@@ -544,6 +544,120 @@ commits the old gate accepts and the new one refuses is **0**.
 
 ---
 
+## What the upgrade test proves, and how it classifies a failure
+
+`make upgrade-test` runs three phases against one cluster: install the
+**previous** pins, upgrade in place to the **pinned** ones, then roll back. It
+is a MECHANISM test at the current pins and says so — three of its five
+assertions pass trivially, because these particular bumps contain no
+compatibility hazard to survive.
+
+Rollback is a **re-point**, not `helm rollback`. Every component is owned by an
+Application with `selfHeal` and `prune`, so a `helm rollback` on a release Argo
+CD manages would be reverted within seconds. Rolling back therefore means
+republishing the older revision into the in-cluster mirror as `main` and letting
+Argo CD converge backward.
+
+### The phases, and what each gate actually reads
+
+```mermaid
+flowchart TD
+    A["Phase 1 &mdash; install the PREVIOUS pins<br/>scratch commit, then make up"]
+    A --> B["Phase 2 &mdash; publish the PINNED revision"]
+    B --> C{{"gate: the publish landed<br/>reads the mirror ref inside the git-server pod<br/>and Argo CD's resolved revision, not local HEAD"}}
+    C --> D["wait: the root rewrites the child Application specs"]
+    D --> E["wait: every Application Synced + Healthy, held 30s"]
+    E --> F{{"gate: targetRevision == pinned<br/>reads DESIRED state only"}}
+    F --> G{{"gate: workloads carry the pinned images<br/>reads RUNNING PODS, not the Deployment spec"}}
+    G --> H["Phase 3 &mdash; roll back<br/>see the classification below"]
+```
+
+Two of those gates are worded the way they are because the obvious version was
+wrong, and a diagram of the obvious version would have looked identical.
+
+**The publish gate reads the mirror, not local `HEAD`.** `assert-published-revision.sh`
+runs `git rev-parse` *inside the git-server pod* and compares it with the root
+Application's `.status.sync.revision`. Asserting against the local checkout
+would have passed while the mirror still served the old revision, because the
+local repository is the thing that was correct all along.
+
+**The installed-state gate reads running pods, not the Deployment spec.**
+Everything above it reads desired state: `targetRevision` is the version Argo CD
+was *handed*, and the convergence wait is Argo CD's verdict on its own work. A
+spec that moved while no container did would satisfy every earlier gate. So the
+last word belongs to `status.containerStatuses[].image` on Running pods, plus
+rollout completion — and completion has to include `status.replicas ==
+updatedReplicas`, without which the assertion passes on a genuinely stalled
+rollout.
+
+### The classification decision
+
+Everything past the mechanism gates is an elimination argument, so what the run
+is allowed to conclude depends on what it knows:
+
+```mermaid
+flowchart TD
+    V{"storage-move verdict<br/>from the pin delta artifact"}
+    V -- "moved" --> SKIP["skip the live leg<br/>warn: this pin is a one-way door<br/>exit 0"]
+    V -- "none" --> RB["re-point: republish the previous revision"]
+    V -- "unavailable" --> RB
+    RB --> M{{"mechanism gates<br/>publish landed, root rewrote children backward"}}
+    M -- "fail" --> RED["RED &mdash; the defect is ours"]
+    M -- "pass" --> CONV{"do the Applications converge?"}
+    CONV -- "no: source unresolvable" --> RED
+    CONV -- "no, verdict was none" --> WARN["green + loud warning<br/>compatibility, upstream's decision"]
+    CONV -- "no, verdict unavailable" --> UNC["UNCLASSIFIED, exit 0<br/>no side is guessed"]
+    CONV -- "yes" --> POST{{"post-rollback gates: previous images on<br/>running pods, edge proxy rolled, serves HTTPS"}}
+    POST -- "fail" --> RED
+    POST -- "pass" --> OK["green"]
+```
+
+In words, for anyone whose reader does not render Mermaid:
+
+- **The rollback converges** — green.
+- **A mechanism gate fails** — red. The re-point did not land, the root did not
+  rewrite the children backward, or a source could not resolve. That one is
+  ours, and `wait-for-platform.sh` returns a distinct exit 4 for an unresolvable
+  source precisely so it cannot be misread as compatibility.
+- **Every mechanism gate passes and it still will not converge** — green with a
+  loud warning. By elimination that is a compatibility problem, which is a fact
+  about an upstream release rather than a defect here, and a check that goes red
+  every time a maintainer does something ordinary is a check people stop
+  reading. The warning names the local causes that present identically —
+  OOMKilled, ImagePullBackOff — so nobody concludes "upstream" without looking.
+- **The verdict was unavailable and it did not converge** — reported as
+  **UNCLASSIFIED**, exit 0. Not green because it worked and not red because this
+  repository is at fault: it is a run that did not produce an answer.
+
+Note the asymmetry: an unavailable verdict only changes the outcome when the
+rollback *also* fails to converge. An unavailable verdict on a rollback that
+converges is an ordinary green.
+
+### The storage-move gate ahead of it
+
+`pin-delta.sh` has already compared the two chart sets without a cluster. If a
+CRD's storage version moved between them, rolling back is not slow or risky —
+it is impossible, because objects are persisted at the storage version and the
+older CRD cannot read what the newer one wrote. The leg is skipped, the run
+warns that this pin is a one-way door, and it stays green: an upstream
+maintainer's decision about their own API is not a build failure here.
+
+The verdict reaches the leg as an **artifact**, not by running `pin-delta.sh`
+inline. That script pulls eight charts from four external registries, and
+putting it inside an eleven-minute cluster job would let a registry blip fail
+the cluster job for a reason that has nothing to do with the cluster. Locally
+there is a fallback at `.work/pin-delta/storage-verdict.txt`, which exists only
+if someone ran `make pin-delta` in that working tree — so `make upgrade-test` on
+a laptop adds no network dependency of its own, and simply reports
+`unavailable` when no verdict is there.
+
+A checked-in verdict file was rejected for the reason such files always fail:
+it would go stale silently. Instead the file records a `pins:` line naming
+exactly which `previous > pinned` pairs it compared, and the reader rebuilds
+that string from `versions.env`. A file describing different pins is not an
+answer to the question being asked, so it reads as `unavailable` rather than
+being believed. It can go out of date; it cannot do so quietly.
+
 ## Bugs, and what they changed
 
 Every one below shipped, passed review by reading, and was found by running
