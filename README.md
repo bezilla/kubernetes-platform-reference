@@ -514,7 +514,7 @@ blocked anything.
 
 | Job | Gates a merge | What it does |
 |---|---|---|
-| `chart · manifests` | **required** | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
+| `chart · manifests` | **required** | helm lint, render, values schema, manifest validation, every environment, `versions.env` against every Application, and `make shell-check` |
 | `guardrails` | **required** | the policy suite, both directions |
 | `identity` | **required** | the identity, trailer and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
 | `supply chain` | **required** | trivy over the tree and both built images, an SPDX SBOM kept per image |
