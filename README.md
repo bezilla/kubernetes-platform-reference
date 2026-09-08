@@ -195,6 +195,51 @@ absence or a broken instrument, and those look identical in a terminal.
 
 ---
 
+## Upgrades, and how rollback is tested
+
+`make upgrade-test` runs three phases against one cluster: install the
+**previous** pinned chart versions, upgrade in place to the current ones, then
+**roll back**. The reasoning is in [DESIGN.md](DESIGN.md); the shape is this.
+
+**Rollback is an Argo CD re-point, not `helm rollback`.** `publish.sh`
+force-publishes any revision into the in-cluster mirror as `main`, and every
+Application pins `targetRevision: main`, so rolling back means republishing the
+older revision under that name and letting Argo CD converge — including pruning
+whatever the newer charts added. `helm rollback` was rejected rather than
+overlooked: every component is owned by an Application with `selfHeal` and
+`prune`, so a Helm rollback would be reverted within seconds. That does not
+contradict the test, it contradicts the architecture.
+
+**At the current pins this proves the mechanism and nothing more, and it says
+so.** The static report finds no compatibility hazard present to survive:
+measured across the four pinned components, **0** CRD storage-version moves,
+**0** served-version removals, and **0** resource-set differences across **164**
+rendered resources. So a green proves the root rewrites its children backward
+and Argo CD converges unattended. It cannot prove rollback is safe in general,
+because at these pins there is nothing here for it to be unsafe about.
+
+**The static half answers compatibility without a cluster.** `make pin-delta`
+compares the two chart sets in about a minute and runs six checks:
+
+| Check | What it catches |
+|---|---|
+| storage version moved | objects are persisted at the storage version, so the older CRD cannot read what the newer one wrote — rollback is impossible, not slow |
+| served version removed | a version something still submits stops being accepted |
+| resource set changed | an object the newer chart adds or drops, which is what a rollback would have to prune or restore |
+| CRD field removed | a field the older chart's schema no longer knows |
+| CRD field added | a field the newer chart added: set it, roll back, and the API server **silently prunes** it — not rejected, and Argo CD still reports Synced |
+| constraint tightened | validation that moved, so an object valid before the bump is refused after it — the only one that breaks *forward* |
+
+Its verdict on the first check gates the live leg: if a storage version moved,
+the rollback is skipped with a warning rather than spending eleven minutes
+discovering what a one-minute static report already knew.
+
+**`make schema-check`** is the other cluster-free half: every rendered manifest
+validated against each Kubernetes version in the matrix, which catches an API
+removed in a version still covered. Also about ten seconds, also no cluster.
+
+---
+
 ## How an app team deploys
 
 This is the entire interface. There is no Deployment to write, no Service, no

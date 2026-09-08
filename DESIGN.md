@@ -548,9 +548,12 @@ commits the old gate accepts and the new one refuses is **0**.
 
 `make upgrade-test` runs three phases against one cluster: install the
 **previous** pins, upgrade in place to the **pinned** ones, then roll back. It
-is a MECHANISM test at the current pins and says so — three of its five
-assertions pass trivially, because these particular bumps contain no
-compatibility hazard to survive.
+is a MECHANISM test at the current pins and says so. The static report finds no
+compatibility hazard present for it to survive: measured across the four pinned
+components, **0** CRD storage-version moves, **0** served-version removals, and
+**0** resource-set differences across **164** rendered resources. A green
+therefore proves the re-point works in reverse; it cannot prove rollback is safe
+in general, because at these pins there is nothing here to be unsafe about.
 
 Rollback is a **re-point**, not `helm rollback`. Every component is owned by an
 Application with `selfHeal` and `prune`, so a `helm rollback` on a release Argo
@@ -632,6 +635,84 @@ In words, for anyone whose reader does not render Mermaid:
 Note the asymmetry: an unavailable verdict only changes the outcome when the
 rollback *also* fails to converge. An unavailable verdict on a rollback that
 converges is an ordinary green.
+
+### The four gates that made the elimination sound
+
+Classification by elimination — *every mechanism gate passed, therefore what
+refused is downstream* — is only worth as much as the mechanism gates. All four
+were added because the version before them passed on a failure.
+
+**Gates that read desired state cannot see a cluster that did not move.**
+Originally every gate read `.spec.source.targetRevision`, the version Argo CD
+was *handed*, or Argo CD's own Synced/Healthy verdict on its own work. Nothing
+opened a pod. The file already recorded the shape of that failure — a run
+reporting "converged in 0s" with four components still on the versions they
+started on — and it was caught only because the specs had not moved either. A
+run where the specs move and the pods do not would have gone green. The last
+gate now reads `status.containerStatuses` off running pods: the spec is what a
+pod *asked for*, which mid-rollout is already the new image on a pod that has
+not started it.
+
+**The right image on a Running pod is still not a finished rollout.** Against a
+live `ImagePullBackOff` on a single-replica Deployment:
+
+```
+generation 4  observed 4  desired 1  updated 1  ready 1  available 1
+```
+
+Every field agreed and nothing was rolling. The surge pod exists, so
+`updatedReplicas` counts it; `readyReplicas` and `availableReplicas` count the
+OLD pod still serving. The first version compared exactly those six numbers and
+passed, while `kubectl rollout status` timed out against the same Deployment.
+The only field that noticed was `status.replicas` at 2 against
+`updatedReplicas` 1 — the old ReplicaSet had not gone away. Both conditions are
+asserted now.
+
+**Comparing local state against local state proves nothing about the cluster.**
+Every version assertion compared one local value with another: `publish.sh`
+computes the SHA it pushed and nothing captured it, and the chart-version gates
+read a string Argo CD had been handed. Nothing observed whether the in-cluster
+Git server actually held the commit, or whether Argo CD ever resolved it. A
+publish that silently did nothing — an empty tree, a git-server pod that
+restarted and took `/srv/git` with it, a ref pushed under the wrong name — left
+all of it passing. There are two reads now because they fail independently:
+`git rev-parse` inside the git-server pod catches a publish that never landed,
+and `platform-root`'s own `.status.sync.revision` catches Argo CD holding a
+stale revision. Argo CD would faithfully report a wrong commit the mirror was
+serving, so neither substitutes for the other.
+
+**The same gate has to work in both directions.** The installed-state assertion
+takes `ASSERT_VERSION_PREFIX`, so the rollback phase asserts the *previous*
+versions with the identical code path rather than a forked copy that could
+drift into agreeing with whatever it was given.
+
+### The data plane is not one of Argo CD's Applications
+
+Every green signal above is about Argo CD Applications. The Envoy proxy is not
+one: the `envoy-gateway` Application installs the **controller**, and the
+controller creates the proxy Deployment, which carries no Argo CD instance label
+at all. So the platform can be Synced, Healthy, held through the settle window
+and verified on the previous versions while the edge is still coming back up.
+
+That is not hypothetical. Rolling `envoy-gateway` v1.9.1 back to v1.9.0
+rebuilds the proxy, nothing waited for it, and the serving assertion failed; the
+run before it won the same race. Which side of a rollout an assertion lands on
+is not a property of the platform. `wait-for-edge.sh` now polls the proxy
+Deployment, selected by the `gateway.envoyproxy.io/owning-gateway-name` and
+`-namespace` labels, before anything asserts that the platform serves.
+
+### `curl -sS` exits 0 on a 502
+
+The serving proof asserted less than it appeared to. `demo-https.sh` used
+`--cacert`, so it always genuinely asserted the certificate — curl exits 60 when
+the chain does not verify. But without `--fail`, `curl -sS` against a 502 exits
+**0**: the request succeeded, the server answered, and the answer was an error
+page. The proof therefore established that TLS terminated and the certificate
+chained to the platform CA, and never that the workload answered at all.
+
+All three requests now carry `--fail`, and the redirect assertion checks for an
+explicit `3xx` to an `https://` location rather than accepting whatever came
+back.
 
 ### The storage-move gate ahead of it
 
