@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 1090" width="1320" height="1090" role="img" aria-labelledby="t d">
-<title id="t">The Argo CD app-of-apps tree: one root Application applied by hand, eight children it produces, and what a tenant receives from them</title>
-<desc id="d">platform-root is the only kubectl apply in the bring-up. It produces eight child Applications in sync-wave order: argocd-repositories, cert-manager, envoy-gateway, kyverno, platform-config, guardrails, otel-collector and quote-api. Four come from upstream Helm charts and four from this repository.</desc>
+<title id="t">The Argo CD app-of-apps tree: one root Application applied by hand, nine children it produces, and what a tenant receives from them</title>
+<desc id="d">platform-root is the only kubectl apply in the bring-up. It produces nine child Applications in sync-wave order: argocd-repositories, cert-manager, envoy-gateway, kyverno, platform-config, guardrails, otel-collector, quote-api and invoice-worker. Four come from upstream Helm charts and four from this repository.</desc>
 <style>text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}.m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}</style>
 <rect width="1320" height="1090" fill="#0d1117"/>
 <text x="60" y="52" fill="#f0f6fc" font-size="27" font-weight="700">One Application applied by hand. Nine it produces.</text>

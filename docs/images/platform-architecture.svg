@@ -16,21 +16,20 @@
          ext   the app team owns it -- their values, their image, their code
          opt   the admission gate, and what it refuses
          piv   the request path, the one flow that crosses every layer
-       Light values are the default so the diagram stays legible even where the
-       colour-scheme query does not match the host page. Neither theme uses pure
-       black or pure white. */
+       One committed palette, matching every other diagram in docs/images: the
+       GitHub dark tokens. This file used to carry a light default with a
+       prefers-color-scheme override, which made it the only adaptive diagram
+       here -- so on a light page it went light while its nine siblings stayed
+       dark, and in dark mode its tokens were near-misses of theirs rather than
+       the same values. The accents map onto the set the other diagrams already
+       use: blue is the platform, orange the application, amber the gate that
+       refuses, purple the path that crosses every layer. */
     :root{
-      --bg:#eef1f6; --panel:#fafbfd; --ink:#1f2937; --dim:#4b5563;
-      --own:#2f6fed; --ext:#5b6675; --opt:#a8570a; --pivot:#7241d6;
-    }
-    @media (prefers-color-scheme: dark){
-      :root{
-        --bg:#141a23; --panel:#1c2531; --ink:#e6eaf1; --dim:#a7b2c2;
-        --own:#74abff; --ext:#98a3b3; --opt:#f0b357; --pivot:#c3a3ff;
-      }
+      --bg:#0d1117; --panel:#11161d; --ink:#f0f6fc; --dim:#8b949e;
+      --own:#58a6ff; --ext:#f0883e; --opt:#d29922; --pivot:#bc8cff;
     }
     .bg{fill:var(--bg)}
-    text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    text{font-family:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
          fill:var(--ink)}
     .h1{font-size:24px;font-weight:700}
     .h2{font-size:14px;fill:var(--dim)}
