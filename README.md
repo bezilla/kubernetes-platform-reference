@@ -436,23 +436,33 @@ make policy-test    # every guardrail against fixtures, offline
 make demo-guardrails  # the same, through live admission control
 ```
 
-CI defines six jobs. Three run on GitHub's free runners; three cannot, for the
-reason given above — they are kept because they are what a maintainer runs
-locally before pushing, and because they will run unchanged on any runner with
-four cores.
+CI defines **eight jobs**, which produce **ten check runs** — the bring-up job
+is a matrix and fans out to three legs, one per Kubernetes version. All ten run
+and pass on `ubuntu-latest`.
 
-| Job | Runs on free CI | What it does |
+**Only four of the ten gate a merge.** That distinction lives in the branch
+protection settings rather than in `ci.yml`, so it cannot be seen by reading the
+workflow, and it is the thing that most changes how the table below should be
+read: the expensive cluster work is *informational*. It reports; it has never
+blocked anything.
+
+| Job | Gates a merge | What it does |
 |---|---|---|
-| `chart · manifests` | yes | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
-| `guardrails` | yes | the policy suite, both directions |
-| `identity` | yes | the identity, trailer and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
-| `bring-up · demo` | **no — 2 cores** | the whole platform built and all five demos run, no sibling repository present. Matrix: Kubernetes 1.32, 1.33, 1.34 |
-| `upgrade in place` | **no — 2 cores** | installs the *previous* chart versions, then upgrades to the pinned ones and requires it to still converge |
-| `supply chain` | yes | trivy over the tree and both built images, an SPDX SBOM kept per image |
+| `chart · manifests` | **required** | helm lint, render, values schema, manifest validation, every environment, and `versions.env` against every Application |
+| `guardrails` | **required** | the policy suite, both directions |
+| `identity` | **required** | the identity, trailer and secrets gate over all history at `fetch-depth: 0`, plus the gate's own self-test |
+| `supply chain` | **required** | trivy over the tree and both built images, an SPDX SBOM kept per image |
+| `fallback path · bring-up · demo · k8s <ver>` | advisory, 3 legs | the whole platform built and all six demos run, no sibling repository present. Matrix: Kubernetes 1.32, 1.33, 1.34 |
+| `upgrade in place` | advisory | installs the *previous* chart versions, upgrades to the pinned ones, then rolls back — see [DESIGN.md](DESIGN.md) |
+| `pin delta` | advisory | what a pin bump changed, from two chart tarballs, no cluster, about a minute |
+| `schema check` | advisory | every rendered manifest against each Kubernetes version in the matrix, no cluster |
 
-The three marked *no* stop at `up.sh`'s preflight with `up: Docker has 2 CPUs`
-before doing any work. Locally, on hardware that meets the floor, they are the
-`make up`, `make demo` and `make upgrade-test` documented above.
+The four required checks are the ones that need no cluster and finish in
+roughly a minute. The advisory six depend on external registries and on a schema
+host, and a required check that reddens because somebody else's CDN had a bad
+minute is a check people learn to click past. `pin delta` and `schema check`
+also report by design — `pin delta` exits 1 to mean *there is something to
+read*, not *something is broken*.
 
 Every action is pinned by commit SHA. [Renovate](renovate.json5) watches the
 upstreams and writes a single dashboard issue — it opens no branches and no pull
