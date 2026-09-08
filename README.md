@@ -84,23 +84,28 @@ Applications are Synced and Healthy. It exits non-zero if anything is not.
 | Environments rendered and guardrail-checked | **3 × 2 tenants, 21 assertions** |
 
 > **What has actually run, and where.** The captures above are real output from
-> an 8-core machine. The bring-up has been observed on Kubernetes 1.32 and 1.34;
-> **1.33 is a matrix target that has not run yet**. Numbers without a qualifier
-> are from repeated local runs; the upgrade figure is a single one.
+> an 8-core machine. The bring-up has run and passed on all three matrix targets
+> — Kubernetes 1.32, 1.33 and 1.34 — on run `34167675924`. Numbers without a
+> qualifier are from repeated local runs; the upgrade figure is a single one.
 >
-> **The three cluster jobs cannot run on GitHub's free runners, and that is a
-> fact about the runner.** `up.sh` refuses below `MIN_CPUS=4`. A free
-> `ubuntu-latest` runner gives Docker **2 CPUs** and 7938 MiB — memory is fine,
-> cores are not — so `bring-up · demo`, `upgrade in place` and anything else that
-> calls `make up` stop at the preflight with `up: Docker has 2 CPUs`. Larger
-> runners need a paid plan; a self-hosted runner on a public repository would
-> execute any fork's pull-request code on the owner's hardware, which is a worse
-> trade than a red badge.
+> **The cluster jobs run on GitHub's standard `ubuntu-latest` runner, and the
+> margin is zero.** Read from that run's log, identically on all three legs:
+> Docker reported `NCPU=4` and 15988 MiB, against `MIN_CPUS=4` and
+> `MIN_MEMORY_MIB=5120`, and the workflow's own comparison step printed
+> `cpu margin : 0 core(s) over MIN_CPUS`. A runner one core smaller would be
+> refused rather than slow. `RECOMMENDED_CPUS` is 8 and is never met there, so
+> `up.sh` prints its under-recommended notice on every CI run — that notice is
+> correct, and `versions.env` is not edited to silence it.
+>
+> **This corrects an earlier claim in this file.** It said these jobs could not
+> run on free runners because Docker offered 2 CPUs and 7938 MiB. That was
+> asserted and never verified, and both figures are wrong; the numbers above are
+> read from the run log. Why the runner offers four cores is not asserted here,
+> because the log says what it offers and not why.
 >
 > **What this means if you are running it: nothing.** `make up` works on any
 > machine that meets the floor, which is most laptops — it is measured above at
-> about five minutes on eight cores. The preflight is refusing a runner, not
-> failing a platform, and it names the number it refused on.
+> about five minutes on eight cores.
 
 ---
 
