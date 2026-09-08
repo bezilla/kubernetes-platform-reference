@@ -739,6 +739,76 @@ that string from `versions.env`. A file describing different pins is not an
 answer to the question being asked, so it reads as `unavailable` rather than
 being believed. It can go out of date; it cannot do so quietly.
 
+## Answering compatibility without a cluster
+
+Two checks answer statically what the eleven-minute cluster leg answers
+dynamically. Both are advisory jobs, both need no cluster, and between them they
+cost about a minute.
+
+### `pin-delta.sh` — six checks over two chart sets
+
+It pulls both chart versions, renders each with the values block the Application
+actually carries, and compares. Six checks, in order of how badly each one bites:
+
+| Check | What it catches, and why it matters |
+|---|---|
+| **storage version moved** | Objects are persisted at the CRD's storage version, so the older chart's CRD cannot read what the newer one wrote. Rollback is not slow or risky — it is impossible. This is the one that gates the live leg. |
+| **served version removed** | A version something still submits stops being accepted. |
+| **resource set changed** | An object the newer chart adds or drops: what a rollback would have to prune or restore. |
+| **CRD field removed** | A field the older chart's schema no longer knows about. |
+| **CRD field added** | The quiet one. Set a field the newer chart added, roll back, and the API server **silently prunes** it — structural pruning, not rejection, with Argo CD still reporting Synced. Nothing warns you. |
+| **constraint tightened** | Validation that moved rather than a field that moved. The only check that breaks **forward**: an object already in the cluster that satisfied the old rule and not the new one fails the sync when the pin lands. |
+
+Three exit codes, and the distinction is the point: `0` ran and found nothing,
+`1` ran and found something to read, `2` could not run. A caller that cannot
+tell `0` from `2` reports a failed chart pull as a clean bill of health. `1` is
+explicitly **not** a build failure — an upstream maintainer tightening a regex
+is a fact about their release, not a defect here.
+
+At the current pins it reports 188 findings: 187 added CRD fields, every one of
+them Kyverno's, plus one tightened constraint in envoy-gateway
+(`securitypolicies.gateway.envoyproxy.io`, where `spec.oidc.provider.issuer`
+gained a URL pattern). None of the 188 is actionable here, and that is a
+measured claim rather than an assumption: of the 36 distinct flagged field paths
+across the nine affected CRDs, **0** are set by anything in this repository —
+checked against all 439 distinct paths its manifests, tenant values and
+environment files actually set. Eight of those nine CRDs belong to
+`policies.kyverno.io`, a group this repository does not use at all.
+
+### `schema-check.sh` — every manifest against every covered Kubernetes version
+
+Validates everything the platform installs against each Kubernetes version in
+the CI matrix, which catches an API removed in a version still covered. That is
+the one thing the three-leg bring-up matrix catches that a single leg would not,
+and it turns out to be answerable in about ten seconds without a cluster.
+
+Two things measurement caught, both of which would have shipped a check that
+could not fail:
+
+**`-ignore-missing-schemas` would have made it pass on the exact defect it
+exists to find.** A removed API and a custom resource are the same observation
+to kubeconform — *no schema for this kind* — so the flag that makes CRDs
+tolerable is the flag that makes a removal invisible. Measured on the fixture:
+with the flag, `Skipped: 1, Errors: 0`, exit 0; without it, `Errors: 1`, exit 1.
+The flag is not used; resources are classified by an explicit list of API groups
+that ship with Kubernetes. The list is explicit rather than a `k8s.io` suffix
+rule because `gateway.networking.k8s.io` ends in `k8s.io` and is a CRD.
+
+**The obvious classification rule produced 147 false findings.** "A built-in
+group with no schema at this version means the API was removed" is wrong:
+`kubernetes-json-schema` ships **no `CustomResourceDefinition` schema at any
+version**, in either the standalone or the standalone-strict set — 404 on
+v1.32.11, v1.33.12 and v1.34.0, both variants. Under that rule every CRD the
+four charts install was reported as removed, 49 per leg. A removal is now
+detected as a **differential**: present at one covered version and absent at
+another. That is a fact about the versions rather than about the schema source,
+and it needs no allow-list to maintain.
+
+Its cost is stated rather than hidden: an API removed *before* the oldest
+covered version is absent from all three legs, so it lands in "not covered by
+the schema source" — a list the run prints, precisely so it cannot be read as a
+clean bill of health.
+
 ## Bugs, and what they changed
 
 Every one below shipped, passed review by reading, and was found by running
