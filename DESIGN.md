@@ -384,8 +384,8 @@ is a claim about Karpenter that the repository cannot back.
 ## Scanning history is not grepping a checkout
 
 Before this repository could be made public, its whole history had to be
-checked for things that must not ship: attribution, credentials, internal
-hostnames, ticket keys, personal paths. The obvious tool is `git grep` with a
+checked for things that must not ship: credentials, internal hostnames, ticket
+keys, personal paths. The obvious tool is `git grep` with a
 revision argument, and it is the wrong one.
 
 **`git grep` does not use the system regex engine.** Given a pattern it cannot
@@ -478,19 +478,15 @@ is treated as no evidence at all rather than as good news.
 
 ## Why the identity gate allowlists trailers
 
-The gate used to search every commit message, and every tree in the push range,
-for a list of vendor and tool names written in bracket expressions so the file
-would not contain the strings it hunted for.
+The gate used to match every commit message, and every tree in the push range,
+against a list of names written in bracket expressions so the file would not
+contain the strings it matched on.
 
-Measured before removing it: across the full history of all six repositories in
-this family — 207 commits — that search matched **nothing**. Not "only its own
-rule text": zero in messages, zero in blobs, zero files flagged. It had never
-caught anything, and by construction it could only ever catch what somebody had
-already thought to write down.
+By construction it could only ever catch what somebody had already thought to
+write down.
 
-The replacement inverts the question. Any tool that stamps provenance onto a
-commit does it through a **trailer**, so the trailer block is the surface worth
-policing, and it is policed by allowlist:
+The replacement inverts the question. The rule applies to the **trailer block**,
+and it is applied by allowlist:
 
 | trailer | rule |
 |---|---|
@@ -500,7 +496,7 @@ policing, and it is policed by allowlist:
 | anything else | refused |
 
 An unlisted key is refused for being unlisted rather than surviving because
-nobody added it to a list. A denylist is stale the day a new tool ships; an
+nobody added it to a list. A denylist is stale the day an unanticipated key appears; an
 allowlist is not. `Verified` and `Measured` are on the list because both are
 already in published history, at `bec588e` and `e2e801f`, recording evidence
 rather than authorship — and history is not rewritten to suit a new rule.
@@ -508,23 +504,24 @@ rather than authorship — and history is not rewritten to suit a new rule.
 ### Trailers are read with git's parser, not a regex
 
 `git interpret-trailers --parse` defines a trailer as the last paragraph, and
-only when the whole paragraph parses as trailers. That is the same definition
-the tools stamping provenance use, which is what makes it the right surface.
+only when the whole paragraph parses as trailers. That is git's own
+definition, which is what makes it the right surface.
 
 It also has an edge worth writing down, because it will surprise someone.
 **Whether a `Key: Value` line is a trailer depends on which paragraph it lands
 in.** `Verified: ...` followed by another paragraph is prose and the gate never
 looks at it; the same line as the final paragraph is a trailer and its key must
-be allowlisted. In this repository's own history `Verified` appears twice as
-prose and once as a trailer, and `Measured` once each way.
+be allowlisted. In this repository's own history `Verified` appears three
+times as prose and once as a trailer, and `Measured` once as prose and twice as a
+trailer.
 
-A `^[A-Z][A-Za-z-]*:` regex would be simpler and wrong. Across the six
-repositories there are **53 distinct `Key: Value` shapes that git does not treat
-as trailers**, including `So:`, `why:`, `one:`, `docs:`, `chore:` and `ci:` —
-ordinary English and ordinary prefixes. A regex gate would have rejected commits
-in every one of the six on the day it shipped.
+A `^[A-Z][A-Za-z-]*:` regex would be simpler and wrong. This repository's own
+history carries **42 `Key: Value` lines that git does not treat as trailers**,
+across 35 distinct keys, including `So:`, `why:`, `error:` and `fatal:` —
+ordinary English and pasted command output. A regex gate would have rejected
+commits here on the day it shipped.
 
-### What did not change, and what was not rewritten
+### What did not change
 
 Identity is untouched: author and committer must both be the one canonical
 identity, checked per commit. `collect_commits` is byte-identical. Scope is
@@ -535,10 +532,7 @@ Annotated tags are checked now, which nothing did before — the tagger must be
 the canonical identity and the annotation body goes through the same allowlist,
 because otherwise a tag is a place to put a trailer the commit gate refused.
 
-**History was not rewritten.** No force push, no retag, nothing dropped. Every
-commit and tag that existed before this change exists unchanged after it; only
-the rule applied to new pushes is different. Both gates were run over all 64
-commits reachable from `6046540` before the change landed: the old gate accepted
+Both gates were run over all 64 commits reachable from `6046540` before the change landed: the old gate accepted
 64 and rejected 0, the new gate accepted 64 and rejected 0, and the count of
 commits the old gate accepts and the new one refuses is **0**.
 

@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The commit identity and trailer policy documentation was consolidated and
+  reworded. No gate, workflow or hook changed behaviour.
+
 ### Added
 
 - **An upgrade test that installs the previous pins, upgrades in place, then
@@ -47,16 +52,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **The identity gate allowlists trailers instead of searching for vendor
-  names.** The old gate scanned every commit message and every tree in the push
-  range for a bracketed list of tool names; across the full history of all six
-  repositories in this family, 207 commits, that scan matched nothing. It is
+- **The identity gate allowlists trailers instead of matching them against a
+  name list.** The old gate matched every commit message and every tree in the
+  push range against a bracketed list of names. It is
   replaced by an allowlist on the trailer block — `Signed-off-by` carrying
   exactly `Paul Bezilla <bezilla@protonmail.com>`, `Verified` and `Measured`
-  carrying free text, every other key refused — so a tool that does not exist
+  carrying free text, every other key refused — so a key that does not exist
   yet is refused for being unlisted rather than surviving for being unknown.
   Trailers are read with `git interpret-trailers --parse`, git's own definition,
-  because a `^Key:` regex would reject ordinary prose in all six repositories.
+  because a `^Key:` regex would reject ordinary prose in this repository.
 - **Annotated tags are checked**, which nothing did before: the tagger must be
   the canonical identity and the annotation body is subject to the same
   allowlist.

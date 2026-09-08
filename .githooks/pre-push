@@ -12,19 +12,17 @@
 #                   may appear. Every other trailer key is refused.
 #   3. secrets      gitleaks over history, failing closed.
 #
-# Why an allowlist rather than a list of vendor names to search for. A denylist
-# only catches what somebody thought to write down: it is stale the day a new
-# tool ships, it names vendors in a repository that would rather not, and it has
-# to be smuggled past its own scan. An allowlist inverts that. Any tool that
-# stamps provenance onto a commit does it through a trailer, so an unlisted key
-# is refused whether or not this file has heard of the thing that wrote it.
+# Why an allowlist rather than a denylist. A denylist can only refuse what
+# someone thought to write down, and the set of keys that do not exist yet
+# cannot be enumerated, so it is stale the day an unanticipated key appears.
+# An allowlist inverts that: refusal is on the key, so an unlisted key is
+# refused whether or not this file has heard of it.
 #
 # Trailers are read with `git interpret-trailers --parse`, which is git's own
 # definition: the last paragraph, and only when it parses as trailers. A line
 # like "Verified: ..." earlier in a message is prose, not a trailer, and is not
-# treated as one -- a `^Key:` regex would reject ordinary commit prose in every
-# repository in this family. See DESIGN.md, "Why the identity gate allowlists
-# trailers".
+# treated as one -- a `^Key:` regex would reject ordinary commit prose in this
+# repository. See DESIGN.md, "Why the identity gate allowlists trailers".
 #
 # Installed by `make init`, which sets core.hooksPath=.githooks. That setting is
 # per-clone and does NOT travel with a clone, so the same rules run server-side
