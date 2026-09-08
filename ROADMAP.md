@@ -77,6 +77,100 @@ plain YAML rather than a chart, so parameterising them means deciding whether
 that directory becomes a chart or gains an overlay — a real design decision, and
 the reason this is a roadmap item rather than a patch.
 
+## Decided, and not being built
+
+Recorded here so the question is not reopened from scratch each time.
+
+### Compatibility testing with a second pin set — no
+
+The rollback leg proves the mechanism, not compatibility, because the current
+pins contain no compatibility hazard to survive. The obvious next step is a
+second, older pin set chosen to contain one. It is not being built.
+
+Every architecture for it has the same defect: to reach a state where rollback
+is genuinely hazardous, the *upgrade* has to start from something other than
+what the previous phase produced — a seeded cluster, a hand-built CR, a
+different starting pin. At that point the rollback is no longer rolling back the
+upgrade that was just performed, and it stops being a rollback test. It becomes
+a test of whether a particular object survives a particular CRD change, which is
+a real question and a different one.
+
+And that question already has a cheaper answer. `pin-delta.sh` compares the two
+chart sets statically and reports storage-version moves, removed served
+versions, resource-set changes, added and removed CRD fields, and tightened
+constraints — in about a minute, with no cluster. The live leg is not the
+instrument for it.
+
+**Revisit when a pin bump crosses a minor version.** A patch bump within a minor
+is where "no hazard present" keeps being true; a minor is where it stops being a
+safe assumption.
+
+### The three-leg bring-up matrix — open, but not for the reason it looked
+
+The matrix runs Kubernetes 1.32, 1.33 and 1.34 and costs roughly 24 minutes.
+
+Two facts changed the shape of this question:
+
+**It is advisory.** The three bring-up legs and `upgrade in place` are not
+required status checks — only `chart · manifests`, `guardrails`, `identity` and
+`supply chain` gate a merge. Those 24 minutes have never blocked anything. The
+cost of keeping the matrix is wall-clock and noise, not merge latency.
+
+**The API-compatibility argument for three legs no longer stands alone.** The
+one thing three legs catch that one leg would not is an API removed in a covered
+version, and `make schema-check` now answers that statically in about ten
+seconds. What the legs still prove by themselves is bring-up *behaviour* under
+each version — which is a real thing, and a different claim from API
+compatibility.
+
+**The roll-forward question is more urgent than the collapse question.** Support
+dates, from [endoflife.date](https://endoflife.date/kubernetes), retrieved
+2026-09-08:
+
+| Leg | Released | End of life | Status on 2026-09-08 | Pinned patch | Latest patch |
+|---|---|---|---|---|---|
+| 1.32 | 2024-12-11 | 2026-02-28 | **EOL, 6 months past** | 1.32.11 | 1.32.13 |
+| 1.33 | 2025-04-23 | 2026-06-28 | **EOL, 10 weeks past** | 1.33.12 | 1.33.13 |
+| 1.34 | 2025-08-27 | 2026-10-27 | supported, ~7 weeks left | 1.34.0 | 1.34.11 |
+
+So two of the three legs currently test versions that are already out of
+support, and the third leaves support inside two months. Deciding whether to
+collapse a matrix whose every leg is about to be stale is the wrong order:
+**roll the matrix forward first, then decide how many legs it needs.** This
+table exists so that decision is made against dates rather than against a
+feeling about staleness — and it needs re-reading whenever the pins move.
+
+## Open, and unexplained
+
+### The intermittent `argocd-repositories` fetch stall
+
+Roughly one runner bring-up in three, `argocd-repositories` sits Unknown for
+four to six minutes before recovering. Argo CD caches the manifest-generation
+failure, so the Application cannot recover while it is polled and a longer
+deadline buys nothing but wall clock.
+
+**This is open. It is not explained by the `/var/tmp` spill.** A real defect was
+found and fixed while looking for it — lighttpd spilling a request body to a
+read-only `/var/tmp`, fixed by `server.upload-dirs = ( "/tmp" )` in
+`bootstrap/git-server.yaml` — and that fix is worth keeping on its own merits.
+It is not the cause of this stall, and the repository should not claim it is:
+the spill threshold was measured at **between 64 KB and 65 KB** and governs
+**request bodies only** (a 371,880-byte response with a 130-byte body does not
+spill). The CI request bodies that failed were **162 and 303 bytes** — two to
+three orders of magnitude below the threshold, so they cannot spill.
+
+What is established: the access log discriminates a client that cut from a
+server that stopped early, by comparing logged bytes against the total the
+client expected, and the captured failure was SHORT — the server stopped first.
+What is not established is why.
+
+The instrumentation is in place and will collect the next occurrence:
+de-duplicated condition logging in `wait-for-app.sh`, the git-server stability
+check, and `capture-fetch-failure.sh`, which records the repo-server log, the
+client-filtered access log, events and object YAML, with a `MANIFEST.txt` that
+distinguishes *captured nothing because there was nothing to capture* from
+*capture failed*.
+
 ## Requires real infrastructure
 
 Not scheduled, because they cannot be shown honestly on kind. See DESIGN.md for
