@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **An upgrade test that installs the previous pins, upgrades in place, then
+  rolls back.** `make upgrade-test` builds a scratch commit carrying the
+  previous chart versions, brings the platform up on them, publishes the pinned
+  revision and requires Argo CD to converge unattended, then re-points back.
+  Rollback is a re-point rather than `helm rollback`, which self-heal would
+  revert within seconds. At the current pins it proves the MECHANISM and says
+  so: measured across the four pinned components there are zero CRD
+  storage-version moves, zero served-version removals and zero resource-set
+  differences across 164 rendered resources, so there is no compatibility
+  hazard present for it to survive.
+- **Four outcomes rather than pass/fail.** A converged rollback is green; a
+  failing mechanism gate is red because that one is ours; every mechanism gate
+  passing while nothing converges is green with a loud warning, because an
+  upstream release that blocks rollback is a maintainer's decision; and a
+  failure with no storage verdict available is reported as UNCLASSIFIED rather
+  than assigned to a side.
+- **`make pin-delta`** — what a pin bump changed, read from two chart tarballs
+  with no cluster, in about a minute. Six checks: storage version moved, served
+  version removed, resource set changed, CRD field removed, CRD field added, and
+  constraint tightened. Three exit codes, because "could not run" is not "ran
+  and found nothing". Its storage verdict gates the live rollback leg.
+- **`make schema-check`** — every rendered manifest validated against each
+  Kubernetes version in the CI matrix, no cluster, about ten seconds. This is
+  the one thing three bring-up legs catch that a single leg would not: an API
+  removed in a version still covered.
+- **A bring-up matrix across Kubernetes 1.32, 1.33 and 1.34**, a second tenant,
+  and `environments/` rendered and checked for every tenant on every commit.
+- **A regression test for the fault injector's exposure**, which reads every
+  replica through the Service's EndpointSlices rather than one pod.
+- **Failure instrumentation for the intermittent `argocd-repositories` stall**:
+  de-duplicated condition logging, a git-server stability check, and a capture
+  that collects both sides of a failing fetch with a manifest distinguishing
+  "captured nothing because there was nothing to capture" from "capture failed".
+- **Diagrams for the CI job graph, the upgrade phases and the rollback
+  classification**, drawn in the same SVG style as the existing architecture
+  diagrams.
+
 ### Changed
 
 - **The identity gate allowlists trailers instead of searching for vendor
@@ -41,7 +80,41 @@ were run over all 64 commits from `6046540` first: old accepted 64 / rejected 0,
 new accepted 64 / rejected 0, disagreements 0.
 
 
-Nothing yet.
+### Fixed
+
+- **Gates that read desired state could not see a cluster that never moved.**
+  Every version gate read `targetRevision` or Argo CD's own Synced/Healthy
+  verdict; nothing opened a pod. The last gate now reads
+  `status.containerStatuses` off running pods.
+- **The right image on a Running pod is not a finished rollout.** Against a live
+  `ImagePullBackOff`, six rollout fields all agreed while `kubectl rollout
+  status` timed out; only `status.replicas != updatedReplicas` noticed. Both
+  conditions are asserted now.
+- **Version assertions compared local state against local state.** Nothing
+  observed whether the in-cluster mirror held the commit or whether Argo CD
+  resolved it. The mirror ref and `platform-root`'s resolved revision are read
+  separately, because they fail independently.
+- **Nothing waited for the data plane.** The Envoy proxy Deployment is created
+  by the controller, not by Argo CD, and carries no instance label, so the
+  platform could be Synced, Healthy and verified while the edge was still coming
+  back up. One run lost that race and the one before it won.
+- **`curl -sS` exits 0 on a 502**, so the HTTPS proof asserted that TLS
+  terminated and the certificate chained, and never that the workload answered.
+  All three requests now carry `--fail`.
+- **lighttpd could not spill a request body.** Its temp directory defaulted to
+  `/var/tmp`, which is on the read-only root filesystem, so a body outgrowing
+  the 64 KiB in-memory buffer failed mid-stream. `server.upload-dirs` now points
+  at a writable `emptyDir`. This closes a real failure mode; it is **not** the
+  `argocd-repositories` stall, which remains open — see ROADMAP.md.
+- **Several claims in the documentation were false and are corrected.** The
+  README said the cluster jobs could not run on GitHub's free runners because
+  Docker offered 2 CPUs and 7938 MiB; the run log reports `NCPU=4` and 15988
+  MiB, with a margin of zero over `MIN_CPUS=4`. It also said 1.33 had never run.
+  The upgrade comments claimed 168 rendered resources where the set-diff covers
+  164, and waved off the schema changes as belonging to objects this repository
+  does not author, when two of the nine affected CRDs are in group `kyverno.io`
+  and one is `clusterpolicies.kyverno.io`. `app-of-apps.svg` told a screen
+  reader there were eight child Applications where the diagram drew nine.
 
 ## 0.1.0 — 2026-09-05
 
