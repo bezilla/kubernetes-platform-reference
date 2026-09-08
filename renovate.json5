@@ -62,6 +62,19 @@
       matchManagers: ['custom.regex'],
       groupName: 'versions.env pins',
     },
+    // platform.local/quote-api is built by `make up` and side-loaded into the
+    // kind node, with pullPolicy: Never. No registry called platform.local
+    // exists, so helm-values -- which config:recommended brings in, and which
+    // reads image.repository out of both tenant values files -- resolves it
+    // against a registry that was never going to answer. That is the whole of
+    // "Error obtaining docker token" and "Package lookup failures" on the
+    // dashboard. Scoped to the package rather than disabling the manager, so a
+    // real image landing in a values file later is still watched.
+    {
+      matchDatasources: ['docker'],
+      matchPackageNames: ['platform.local/quote-api'],
+      enabled: false,
+    },
   ],
 
   // versions.env is a shell file, so no packaged manager reads it -- which is
